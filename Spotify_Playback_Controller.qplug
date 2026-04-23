@@ -14,7 +14,7 @@ function GetPrettyName() return "Spotify Playback Controller" end
 function GetProperties()
   return {
     { Name = "Client ID", Type = "string", Value = "" },
-    { Name = "Redirect Port", Type = "integer", Value = 9091 },
+    { Name = "Redirect Port", Type = "integer", Value = 9091, Min = 1024, Max = 65535 },
     { Name = "Poll Interval (s)", Type = "enum", Choices = {"1", "2", "3", "5", "10"}, Value = "3" }
   }
 end
@@ -22,12 +22,12 @@ end
 function GetControls()
   return {
     -- Authentication Group
-    { Name = "Auth_URL", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Auth_URL", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Auth_Code_Input", ControlType = "Text", Count = 1, PinStyle = "Input", UserPin = true },
     { Name = "Authorize", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     { Name = "Logout", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
-    { Name = "Auth_Status", ControlType = "Indicator", Count = 1, PinStyle = "Output", UserPin = true },
-    { Name = "User_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Auth_Status", ControlType = "Indicator", IndicatorType = "LED", Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "User_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     
     -- Transport Controls Group
     { Name = "Play", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
@@ -36,22 +36,22 @@ function GetControls()
     { Name = "Previous", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     { Name = "Shuffle", ControlType = "Button", ButtonType = "Toggle", Count = 1, PinStyle = "Both", UserPin = true },
     { Name = "Repeat", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
-    { Name = "Repeat_State", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Repeat_State", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Is_Playing", ControlType = "Indicator", Count = 1, PinStyle = "Output", UserPin = true },
     
     -- Now-Playing Metadata Group
-    { Name = "Track_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
-    { Name = "Artist_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
-    { Name = "Album_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
-    { Name = "Album_Art_URL", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Track_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "Artist_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "Album_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "Album_Art_URL", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Progress_Ms", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Output", UserPin = true },
-    { Name = "Progress_Text", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
-    { Name = "Duration_Ms", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Progress_Text", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "Duration_Ms", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     
     -- Volume & Device Group
     { Name = "Volume", ControlType = "Knob", Min = 0, Max = 100, Count = 1, PinStyle = "Both", UserPin = true },
-    { Name = "Active_Device", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
-    { Name = "Device_ID", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Active_Device", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "Device_ID", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     
     -- Seek Control
     { Name = "Seek_Position", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Input", UserPin = true }
@@ -105,6 +105,7 @@ function GetControlLayout(props)
   layout["Shuffle"] = { Style = "Button", Legend = "Shuffle", Position = {200, 305}, Size = {60, 24} }
   layout["Repeat"] = { Style = "Button", Legend = "Repeat", Position = {265, 305}, Size = {60, 24} }
   layout["Is_Playing"] = { Style = "Indicator", Position = {340, 307}, Size = {20, 20} }
+  layout["Repeat_State"] = { Style = "Text", Position = {340, 285}, Size = {50, 20} }
   
   -- Volume & Device Section
   table.insert(graphics, { Type = "GroupBox", Text = "Volume & Device", Position = {0, 350}, Size = {400, 60} })
@@ -134,6 +135,11 @@ if Controls then
   
   local auth_server = nil
   local poll_timer = Timer.New()
+  local is_polling_update = false -- Guard against feedback loops on bidirectional controls
+  
+  -- Forward declarations for functions with circular references
+  local refresh_access_token
+  local schedule_token_refresh
   
   -- ==========================================
   -- Utility Functions
@@ -155,6 +161,7 @@ if Controls then
     return str
   end
   
+  -- Auth status: 0 = off, 1 = green/ok, 2 = red/error, 3 = yellow/waiting
   local function update_auth_status(status)
     Controls.Auth_Status.Value = status
   end
@@ -173,11 +180,49 @@ if Controls then
   end
 
   local function generate_code_challenge(verifier)
-    local hash = Crypto.Digest("sha256", verifier)
+    -- SHA256 hash the verifier, then base64url encode the raw bytes
+    local hash = Crypto.Digest("sha256", verifier) -- returns hex string
+    -- Convert hex string to raw bytes for proper base64url encoding
     local raw = hash:gsub("..", function(cc) return string.char(tonumber(cc, 16)) end)
-    local b64 = Crypto.Base64Encode(raw, false)
+    local b64 = Crypto.Base64Encode(raw, false) -- no padding
     b64 = b64:gsub("+", "-"):gsub("/", "_")
     return b64
+  end
+
+  -- ==========================================
+  -- Token Refresh (forward-declared above)
+  -- ==========================================
+  schedule_token_refresh = function()
+    local delay = math.max((token_expiry - os.time()) - 60, 10)
+    Timer.CallAfter(refresh_access_token, delay)
+  end
+
+  refresh_access_token = function()
+    if not refresh_token then return end
+    
+    local body = "client_id=" .. CLIENT_ID
+      .. "&grant_type=refresh_token"
+      .. "&refresh_token=" .. refresh_token
+      
+    HttpClient.Upload({
+      Url = "https://accounts.spotify.com/api/token",
+      Method = "POST",
+      Headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      Data = body,
+      EventHandler = function(tbl, http_code, data, err, hdrs)
+        if http_code == 200 then
+          local json = rapidjson.decode(data)
+          access_token = json.access_token
+          if json.refresh_token then refresh_token = json.refresh_token end
+          token_expiry = os.time() + (json.expires_in or 3600)
+          schedule_token_refresh()
+          print("[Spotify] Token refreshed successfully.")
+        else
+          update_auth_status(2)
+          print("[Spotify] Failed to refresh token: " .. tostring(err))
+        end
+      end
+    })
   end
 
   -- ==========================================
@@ -186,6 +231,7 @@ if Controls then
   local function spotify_api(method, endpoint, body_data, callback)
     if not access_token then return end
     
+    -- Auto-refresh if token has already expired
     if os.time() >= token_expiry then
       refresh_access_token()
       Timer.CallAfter(function() spotify_api(method, endpoint, body_data, callback) end, 2)
@@ -252,16 +298,19 @@ if Controls then
           Controls.Progress_Text.String = format_ms(prog) .. " / " .. format_ms(dur)
           Controls.Duration_Ms.String   = tostring(dur)
           
+          -- Guard bidirectional controls to prevent feedback loops
+          is_polling_update = true
           Controls.Shuffle.Boolean      = state.shuffle_state or false
           Controls.Repeat_State.String  = state.repeat_state or "off"
-          
           if state.device then
             Controls.Volume.Value       = state.device.volume_percent or 0
             Controls.Active_Device.String = state.device.name or ""
             Controls.Device_ID.String   = state.device.id or ""
           end
+          is_polling_update = false
         end
       elseif code == 204 then
+        -- Nothing currently playing
         Controls.Track_Name.String  = ""
         Controls.Artist_Name.String = ""
         Controls.Album_Name.String = ""
@@ -269,6 +318,8 @@ if Controls then
         Controls.Progress_Ms.Position = 0
         Controls.Progress_Text.String = "0:00 / 0:00"
         Controls.Is_Playing.Boolean = false
+      elseif code ~= nil then
+        print("[Spotify] Playback state poll returned code: " .. tostring(code))
       end
     end)
   end
@@ -277,45 +328,16 @@ if Controls then
     poll_timer:Stop()
     poll_timer.EventHandler = poll_now_playing
     poll_timer:Start(POLL_INTERVAL)
-    poll_now_playing()
+    poll_now_playing() -- Immediate first poll
   end
 
-  local function schedule_token_refresh()
-    local delay = math.max((token_expiry - os.time()) - 60, 10)
-    Timer.CallAfter(refresh_access_token, delay)
-  end
-
-  function refresh_access_token()
-    if not refresh_token then return end
-    
-    local body = "client_id=" .. CLIENT_ID
-      .. "&grant_type=refresh_token"
-      .. "&refresh_token=" .. refresh_token
-      
-    HttpClient.Upload({
-      Url = "https://accounts.spotify.com/api/token",
-      Method = "POST",
-      Headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
-      Data = body,
-      EventHandler = function(tbl, http_code, data, err, hdrs)
-        if http_code == 200 then
-          local json = rapidjson.decode(data)
-          access_token = json.access_token
-          if json.refresh_token then refresh_token = json.refresh_token end
-          token_expiry = os.time() + (json.expires_in or 3600)
-          schedule_token_refresh()
-        else
-          update_auth_status(2) -- Red/Error
-          print("Failed to refresh token: " .. tostring(err))
-        end
-      end
-    })
-  end
-
+  -- ==========================================
+  -- Token Exchange
+  -- ==========================================
   local function exchange_code_for_token(code)
-    -- Stop server after getting code
+    -- Stop the TCP listener after capturing the auth code
     if auth_server then
-        auth_server:Disconnect()
+        auth_server:Close()
         auth_server = nil
     end
     
@@ -336,11 +358,13 @@ if Controls then
           access_token = json.access_token
           refresh_token = json.refresh_token
           token_expiry = os.time() + (json.expires_in or 3600)
+          schedule_token_refresh() -- Schedule auto-refresh before expiry
           start_polling()
           fetch_user_profile()
+          print("[Spotify] Authorization successful.")
         else
           update_auth_status(2)
-          print("Token exchange failed: " .. tostring(data))
+          print("[Spotify] Token exchange failed: " .. tostring(data))
         end
       end
     })
@@ -351,14 +375,20 @@ if Controls then
   -- ==========================================
   Controls.Authorize.EventHandler = function()
     if CLIENT_ID == "" then
-      print("Error: Client ID is missing.")
+      print("[Spotify] Error: Client ID is missing. Set it in plugin properties.")
       return
     end
     
     update_auth_status(3) -- Yellow/Waiting
     
-    -- Network interface IP for redirect
-    local ip = Network.Interfaces()[1].Address
+    -- Detect the Core's network IP for the redirect URI
+    local interfaces = Network.Interfaces()
+    if not interfaces or not interfaces[1] then
+      print("[Spotify] Error: Could not detect network interface.")
+      update_auth_status(2)
+      return
+    end
+    local ip = interfaces[1].Address
     REDIRECT_URI = "http://" .. ip .. ":" .. tostring(REDIRECT_PORT) .. "/callback"
     
     code_verifier = generate_code_verifier()
@@ -374,25 +404,34 @@ if Controls then
       
     Controls.Auth_URL.String = auth_url
     
-    -- Start TCP Server
-    if auth_server then auth_server:Disconnect() end
+    -- Start TCP Server to catch the OAuth redirect from Spotify
+    if auth_server then auth_server:Close() end
     auth_server = TcpSocketServer.New()
     auth_server.EventHandler = function(socket)
       socket.EventHandler = function(sock, evt)
         if evt == TcpSocket.Events.Data then
           local data = sock:Read(sock.BufferLength)
-          local code = data:match("[?&]code=([^&%s]+)")
-          if code then
-            local html = "<html><body><h1>✅ Spotify Authorized!</h1><p>You can close this tab and return to Q-SYS.</p></body></html>"
-            local resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " .. #html .. "\r\nConnection: close\r\n\r\n" .. html
+          local auth_code = data:match("[?&]code=([^&%s]+)")
+          if auth_code then
+            -- Send a friendly response back to the user's browser
+            local html = "<html><body><h1>Spotify Authorized!</h1><p>You can close this tab and return to Q-SYS.</p></body></html>"
+            local resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: " .. #html .. "\r\nConnection: close\r\n\r\n" .. html
             sock:Write(resp)
             Timer.CallAfter(function() sock:Disconnect() end, 0.5)
-            exchange_code_for_token(code)
+            exchange_code_for_token(auth_code)
+          else
+            -- Check for error in the redirect (e.g. user denied access)
+            local err_msg = data:match("[?&]error=([^&%s]+)")
+            if err_msg then
+              print("[Spotify] Authorization denied: " .. err_msg)
+              update_auth_status(2)
+            end
           end
         end
       end
     end
     auth_server:Listen(REDIRECT_PORT)
+    print("[Spotify] Listening for OAuth callback on port " .. tostring(REDIRECT_PORT))
   end
 
   Controls.Auth_Code_Input.EventHandler = function(ctrl)
@@ -406,7 +445,7 @@ if Controls then
     access_token = nil
     refresh_token = nil
     poll_timer:Stop()
-    if auth_server then auth_server:Disconnect() auth_server = nil end
+    if auth_server then auth_server:Close() auth_server = nil end
     update_auth_status(2) -- Red
     Controls.User_Name.String = ""
     Controls.Track_Name.String = ""
@@ -419,6 +458,7 @@ if Controls then
     Controls.Active_Device.String = ""
     Controls.Is_Playing.Boolean = false
     Controls.Auth_URL.String = ""
+    print("[Spotify] Logged out.")
   end
 
   Controls.Play.EventHandler = function()
@@ -438,6 +478,7 @@ if Controls then
   end
 
   Controls.Shuffle.EventHandler = function(ctrl)
+    if is_polling_update then return end -- Prevent feedback loop
     local state = ctrl.Boolean and "true" or "false"
     spotify_api("PUT", "/me/player/shuffle?state=" .. state)
   end
@@ -449,6 +490,7 @@ if Controls then
   end
 
   Controls.Volume.EventHandler = function(ctrl)
+    if is_polling_update then return end -- Prevent feedback loop
     local vol = math.floor(ctrl.Value)
     spotify_api("PUT", "/me/player/volume?volume_percent=" .. vol)
   end
@@ -462,5 +504,6 @@ if Controls then
   end
   
   -- Initialize
-  update_auth_status(2) -- Start logged out
+  update_auth_status(2) -- Start as logged out
+  print("[Spotify] Plugin initialized. Set Client ID in properties and press Authorize.")
 end
