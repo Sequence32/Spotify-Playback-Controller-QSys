@@ -60,6 +60,7 @@ function GetControls()
     -- Playlist Group (10 slots)
     { Name = "Refresh_Playlists", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     { Name = "Playlist_Name", ControlType = "Text", Count = 10, PinStyle = "Output", UserPin = true },
+    { Name = "Playlist_Art", ControlType = "Text", Count = 10, PinStyle = "Output", UserPin = true },
     { Name = "Playlist_Play", ControlType = "Button", ButtonType = "Trigger", Count = 10, PinStyle = "Input", UserPin = true }
   }
 end
@@ -597,6 +598,7 @@ if Controls then
         -- Clear all slots first
         for i = 1, 10 do
           Controls.Playlist_Name[i].String = ""
+          Controls.Playlist_Art[i].String = ""
           playlist_uris[i] = nil
         end
         -- Fill slots with playlist data
@@ -605,6 +607,9 @@ if Controls then
             if i > 10 then break end
             Controls.Playlist_Name[i].String = pl.name or ""
             playlist_uris[i] = pl.uri or ""
+            -- Grab playlist cover art (first image)
+            local images = pl.images or {}
+            Controls.Playlist_Art[i].String = images[1] and images[1].url or ""
           end
           print("[Spotify] Loaded " .. #result.items .. " playlists.")
         end
