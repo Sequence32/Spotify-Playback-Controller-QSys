@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller",
-  Version = "1.1.6",
+  Version = "1.1.7",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -61,7 +61,13 @@ function GetControls()
     { Name = "Refresh_Playlists", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     { Name = "Playlist_Name", ControlType = "Text", Count = 10, PinStyle = "Output", UserPin = true },
     { Name = "Playlist_Art", ControlType = "Text", Count = 10, PinStyle = "Output", UserPin = true },
-    { Name = "Playlist_Play", ControlType = "Button", ButtonType = "Trigger", Count = 10, PinStyle = "Input", UserPin = true }
+    { Name = "Playlist_Play", ControlType = "Button", ButtonType = "Trigger", Count = 10, PinStyle = "Input", UserPin = true },
+    
+    -- Device Selection Group (5 slots)
+    { Name = "Refresh_Devices", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Device_Name", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
+    { Name = "Device_Type", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
+    { Name = "Device_Select", ControlType = "Button", ButtonType = "Trigger", Count = 5, PinStyle = "Input", UserPin = true }
   }
 end
 
@@ -129,6 +135,17 @@ function GetControlLayout(props)
     local row_y = pl_y + 10 + (i * 26)
     layout["Playlist_Name " .. i] = { Style = "Text", Position = {10, row_y}, Size = {310, 24} }
     layout["Playlist_Play " .. i] = { Style = "Button", Legend = "Play", Position = {325, row_y}, Size = {65, 24} }
+  end
+
+  -- Device Selection Section
+  local dev_y = 720
+  table.insert(graphics, { Type = "GroupBox", Text = "Devices", Position = {0, dev_y - 5}, Size = {400, 170} })
+  layout["Refresh_Devices"] = { Style = "Button", Legend = "Refresh", Position = {10, dev_y + 10}, Size = {80, 24} }
+  for i = 1, 5 do
+    local row_y = dev_y + 10 + (i * 26)
+    layout["Device_Name " .. i] = { Style = "Text", Position = {10, row_y}, Size = {230, 24} }
+    layout["Device_Type " .. i] = { Style = "Text", Position = {245, row_y}, Size = {80, 24} }
+    layout["Device_Select " .. i] = { Style = "Button", Legend = "Select", Position = {330, row_y}, Size = {60, 24} }
   end
 
   return layout, graphics
@@ -656,6 +673,62 @@ if Controls then
             print("[Spotify] Playing playlist: " .. Controls.Playlist_Name[i].String)
           else
             print("[Spotify] Failed to start playlist. Code: " .. tostring(code))
+          end
+        end)
+      end
+    end
+  end
+  
+  -- ==========================================
+  -- Device Selection Logic
+  -- ==========================================
+  local device_ids = {} -- Store device IDs for the 5 slots
+  
+  local function fetch_devices()
+    spotify_api("GET", "/me/player/devices", nil, function(code, data)
+      if code == 200 and data then
+        local result = rapidjson.decode(data)
+        -- Clear all slots first
+        for i = 1, 5 do
+          Controls.Device_Name[i].String = ""
+          Controls.Device_Type[i].String = ""
+          device_ids[i] = nil
+        end
+        -- Fill slots with device data
+        if result and type(result.devices) == "table" then
+          for i, dev in ipairs(result.devices) do
+            if i > 5 then break end
+            local active_marker = dev.is_active and " *" or ""
+            Controls.Device_Name[i].String = (dev.name or "") .. active_marker
+            Controls.Device_Type[i].String = dev.type or ""
+            device_ids[i] = dev.id or ""
+          end
+          print("[Spotify] Found " .. #result.devices .. " device(s).")
+        end
+      else
+        print("[Spotify] Failed to fetch devices. Code: " .. tostring(code))
+      end
+    end)
+  end
+  
+  Controls.Refresh_Devices.EventHandler = function()
+    fetch_devices()
+  end
+  
+  -- Wire up each device select button
+  for i = 1, 5 do
+    Controls.Device_Select[i].EventHandler = function()
+      local dev_id = device_ids[i]
+      if dev_id and dev_id ~= "" then
+        local body = rapidjson.encode({ device_ids = { dev_id }, play = true })
+        spotify_api("PUT", "/me/player", body, function(code)
+          if code == 204 or code == 200 then
+            last_device_id = dev_id
+            print("[Spotify] Transferred playback to: " .. Controls.Device_Name[i].String)
+            Timer.CallAfter(poll_now_playing, 1)
+            Timer.CallAfter(fetch_devices, 2) -- Refresh to update active marker
+          else
+            print("[Spotify] Failed to transfer playback. Code: " .. tostring(code))
           end
         end)
       end
