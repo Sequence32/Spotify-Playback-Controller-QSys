@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller",
-  Version = "1.0.3",
+  Version = "1.1.2",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett - Telsystems",
@@ -156,6 +156,7 @@ if Controls then
   -- Forward declarations for functions with circular references
   local refresh_access_token
   local schedule_token_refresh
+  local fetch_playlists
   
   -- ==========================================
   -- Utility Functions
@@ -589,7 +590,7 @@ if Controls then
   -- ==========================================
   local playlist_uris = {} -- Store URIs for the 10 slots
   
-  local function fetch_playlists()
+  fetch_playlists = function()
     spotify_api("GET", "/me/playlists?limit=10", nil, function(code, data)
       if code == 200 and data then
         local result = rapidjson.decode(data)
