@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller",
-  Version = "1.1.4",
+  Version = "1.1.5",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett - Telsystems",
@@ -153,7 +153,6 @@ if Controls then
   local poll_timer = Timer.New()
   local is_polling_update = false -- Guard against feedback loops on bidirectional controls
   local auth_code_used = false -- Prevent duplicate token exchange attempts
-  local last_art_url = "" -- Track current art to avoid re-downloading
   
   -- Forward declarations for functions with circular references
   local refresh_access_token
@@ -308,42 +307,26 @@ if Controls then
     spotify_api("GET", "/me/player", nil, function(code, data)
       if code == 200 and data and #data > 0 then
         local state = rapidjson.decode(data)
-        if state and state.item then
+        if state and type(state.item) == "table" then
           Controls.Track_Name.String  = state.item.name or ""
           Controls.Album_Name.String  = (state.item.album or {}).name or ""
           Controls.Is_Playing.Boolean = state.is_playing or false
           
           local artists = {}
-          for _, a in ipairs(state.item.artists or {}) do
-            table.insert(artists, a.name)
+          if type(state.item.artists) == "table" then
+            for _, a in ipairs(state.item.artists) do
+              table.insert(artists, a.name)
+            end
           end
           Controls.Artist_Name.String = table.concat(artists, ", ")
           
           -- Extract album art URL (type-safe for rapidjson)
-          local new_art_url = ""
-          local album_images = (state.item.album or {}).images
-          if type(album_images) == "table" and album_images[1] then
-            new_art_url = album_images[1].url or ""
+          local art_url = ""
+          local album = state.item.album
+          if type(album) == "table" and type(album.images) == "table" and album.images[1] then
+            art_url = album.images[1].url or ""
           end
-          Controls.Album_Art_URL.String = new_art_url
-          
-          -- Download album art to Core filesystem if it changed
-          if new_art_url ~= "" and new_art_url ~= last_art_url then
-            last_art_url = new_art_url
-            HttpClient.Download({
-              Url = new_art_url, Timeout = 10,
-              EventHandler = function(t, dl_code, dl_data, dl_err)
-                if dl_code == 200 and dl_data then
-                  -- Save to Core media directory
-                  local f = io.open("/media/Images/spotify_art.jpg", "wb")
-                  if f then
-                    f:write(dl_data)
-                    f:close()
-                  end
-                end
-              end
-            })
-          end
+          Controls.Album_Art_URL.String = art_url
           
           local prog = state.progress_ms or 0
           local dur  = state.item.duration_ms or 1
