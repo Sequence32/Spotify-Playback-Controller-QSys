@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller",
-  Version = "1.0.1",
+  Version = "1.0.3",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett - Telsystems",
@@ -14,6 +14,7 @@ function GetPrettyName() return "Spotify Playback Controller" end
 function GetProperties()
   return {
     { Name = "Client ID", Type = "string", Value = "" },
+    { Name = "Core IP Address", Type = "string", Value = "" },
     { Name = "Redirect Port", Type = "integer", Value = 9091, Min = 1024, Max = 65535 },
     { Name = "Poll Interval (s)", Type = "enum", Choices = {"1", "2", "3", "5", "10"}, Value = "3" }
   }
@@ -54,7 +55,12 @@ function GetControls()
     { Name = "Device_ID", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     
     -- Seek Control
-    { Name = "Seek_Position", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Input", UserPin = true }
+    { Name = "Seek_Position", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Input", UserPin = true },
+    
+    -- Playlist Group (10 slots)
+    { Name = "Refresh_Playlists", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Playlist_Name", ControlType = "Text", Count = 10, PinStyle = "Output", UserPin = true },
+    { Name = "Playlist_Play", ControlType = "Button", ButtonType = "Trigger", Count = 10, PinStyle = "Input", UserPin = true }
   }
 end
 
@@ -114,6 +120,15 @@ function GetControlLayout(props)
   
   table.insert(graphics, { Type = "Label", Text = "Device:", Position = {210, 370}, Size = {50, 24}, HTextAlign = "Right" })
   layout["Active_Device"] = { Style = "Text", Position = {265, 370}, Size = {125, 24} }
+  -- Playlist Section
+  local pl_y = 420
+  table.insert(graphics, { Type = "GroupBox", Text = "Playlists", Position = {0, pl_y - 5}, Size = {400, 290} })
+  layout["Refresh_Playlists"] = { Style = "Button", Legend = "Refresh", Position = {10, pl_y + 10}, Size = {80, 24} }
+  for i = 1, 10 do
+    local row_y = pl_y + 10 + (i * 26)
+    layout["Playlist_Name " .. i] = { Style = "Text", Position = {10, row_y}, Size = {310, 24} }
+    layout["Playlist_Play " .. i] = { Style = "Button", Legend = "Play", Position = {325, row_y}, Size = {65, 24} }
+  end
 
   return layout, graphics
 end
@@ -136,6 +151,7 @@ if Controls then
   local auth_server = nil
   local poll_timer = Timer.New()
   local is_polling_update = false -- Guard against feedback loops on bidirectional controls
+  local auth_code_used = false -- Prevent duplicate token exchange attempts
   
   -- Forward declarations for functions with circular references
   local refresh_access_token
@@ -346,6 +362,13 @@ if Controls then
   -- Token Exchange
   -- ==========================================
   local function exchange_code_for_token(code)
+    -- Prevent duplicate exchange (browsers can send multiple requests)
+    if auth_code_used then
+      print("[Spotify] Ignoring duplicate auth code.")
+      return
+    end
+    auth_code_used = true
+    
     -- Stop the TCP listener after capturing the auth code
     if auth_server then
         auth_server:Close()
@@ -372,6 +395,8 @@ if Controls then
           schedule_token_refresh() -- Schedule auto-refresh before expiry
           start_polling()
           fetch_user_profile()
+          -- Auto-load playlists after a brief delay
+          Timer.CallAfter(function() fetch_playlists() end, 2)
           print("[Spotify] Authorization successful.")
         else
           update_auth_status(2)
@@ -390,16 +415,22 @@ if Controls then
       return
     end
     
+    auth_code_used = false -- Reset flag for new auth attempt
     update_auth_status(3) -- Yellow/Waiting
     
-    -- Detect the Core's network IP for the redirect URI
-    local interfaces = Network.Interfaces()
-    if not interfaces or not interfaces[1] then
-      print("[Spotify] Error: Could not detect network interface.")
-      update_auth_status(2)
-      return
+    -- Determine the IP for the redirect URI
+    -- Use the property if set, otherwise try to auto-detect
+    local ip = Properties["Core IP Address"].Value
+    if ip == "" then
+      local interfaces = Network.Interfaces()
+      if interfaces and interfaces[1] then
+        ip = interfaces[1].Address
+      else
+        print("[Spotify] Error: Could not detect network interface. Set 'Core IP Address' in properties.")
+        update_auth_status(2)
+        return
+      end
     end
-    local ip = interfaces[1].Address
     REDIRECT_URI = "http://" .. ip .. ":" .. tostring(REDIRECT_PORT) .. "/callback"
     
     code_verifier = generate_code_verifier()
@@ -409,7 +440,7 @@ if Controls then
       .. "client_id=" .. CLIENT_ID
       .. "&response_type=code"
       .. "&redirect_uri=" .. url_encode(REDIRECT_URI)
-      .. "&scope=" .. url_encode("user-read-playback-state user-modify-playback-state user-read-currently-playing")
+      .. "&scope=" .. url_encode("user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative")
       .. "&code_challenge_method=S256"
       .. "&code_challenge=" .. code_challenge
       
@@ -550,6 +581,57 @@ if Controls then
     if dur > 0 then
       local pos_ms = math.floor(ctrl.Position * dur)
       spotify_api("PUT", "/me/player/seek?position_ms=" .. pos_ms)
+    end
+  end
+  
+  -- ==========================================
+  -- Playlist Logic
+  -- ==========================================
+  local playlist_uris = {} -- Store URIs for the 10 slots
+  
+  local function fetch_playlists()
+    spotify_api("GET", "/me/playlists?limit=10", nil, function(code, data)
+      if code == 200 and data then
+        local result = rapidjson.decode(data)
+        -- Clear all slots first
+        for i = 1, 10 do
+          Controls.Playlist_Name[i].String = ""
+          playlist_uris[i] = nil
+        end
+        -- Fill slots with playlist data
+        if result and result.items then
+          for i, pl in ipairs(result.items) do
+            if i > 10 then break end
+            Controls.Playlist_Name[i].String = pl.name or ""
+            playlist_uris[i] = pl.uri or ""
+          end
+          print("[Spotify] Loaded " .. #result.items .. " playlists.")
+        end
+      else
+        print("[Spotify] Failed to fetch playlists. Code: " .. tostring(code))
+      end
+    end)
+  end
+  
+  Controls.Refresh_Playlists.EventHandler = function()
+    fetch_playlists()
+  end
+  
+  -- Wire up each playlist play button
+  for i = 1, 10 do
+    Controls.Playlist_Play[i].EventHandler = function()
+      local uri = playlist_uris[i]
+      if uri and uri ~= "" then
+        local body = rapidjson.encode({ context_uri = uri })
+        spotify_api("PUT", "/me/player/play", body, function(code)
+          if code == 204 or code == 200 then
+            Timer.CallAfter(poll_now_playing, 1)
+            print("[Spotify] Playing playlist: " .. Controls.Playlist_Name[i].String)
+          else
+            print("[Spotify] Failed to start playlist. Code: " .. tostring(code))
+          end
+        end)
+      end
     end
   end
   
