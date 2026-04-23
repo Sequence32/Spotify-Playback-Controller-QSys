@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller",
-  Version = "1.1.7",
+  Version = "1.1.8",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -49,8 +49,7 @@ function GetControls()
     { Name = "Progress_Text", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Duration_Ms", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     
-    -- Volume & Device Group
-    { Name = "Volume", ControlType = "Knob", Min = 0, Max = 100, Count = 1, PinStyle = "Both", UserPin = true },
+    -- Device Group
     { Name = "Active_Device", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Device_ID", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     
@@ -120,13 +119,11 @@ function GetControlLayout(props)
   layout["Is_Playing"] = { Style = "Indicator", Position = {340, 307}, Size = {20, 20} }
   layout["Repeat_State"] = { Style = "Text", Position = {340, 285}, Size = {50, 20} }
   
-  -- Volume & Device Section
-  table.insert(graphics, { Type = "GroupBox", Text = "Volume & Device", Position = {0, 350}, Size = {400, 60} })
-  table.insert(graphics, { Type = "Label", Text = "Vol:", Position = {10, 370}, Size = {40, 24}, HTextAlign = "Right" })
-  layout["Volume"] = { Style = "Knob", Position = {55, 370}, Size = {150, 24} }
+  -- Device Section
+  table.insert(graphics, { Type = "GroupBox", Text = "Active Device", Position = {0, 350}, Size = {400, 60} })
   
-  table.insert(graphics, { Type = "Label", Text = "Device:", Position = {210, 370}, Size = {50, 24}, HTextAlign = "Right" })
-  layout["Active_Device"] = { Style = "Text", Position = {265, 370}, Size = {125, 24} }
+  table.insert(graphics, { Type = "Label", Text = "Device:", Position = {10, 370}, Size = {50, 24}, HTextAlign = "Right" })
+  layout["Active_Device"] = { Style = "Text", Position = {65, 370}, Size = {125, 24} }
   -- Playlist Section
   local pl_y = 420
   table.insert(graphics, { Type = "GroupBox", Text = "Playlists", Position = {0, pl_y - 5}, Size = {400, 290} })
@@ -357,7 +354,6 @@ if Controls then
           Controls.Shuffle.Boolean      = state.shuffle_state or false
           Controls.Repeat_State.String  = state.repeat_state or "off"
           if state.device then
-            Controls.Volume.Value       = state.device.volume_percent or 0
             Controls.Active_Device.String = state.device.name or ""
             Controls.Device_ID.String   = state.device.id or ""
             -- Cache device ID for targeting play commands later
@@ -605,11 +601,7 @@ if Controls then
     spotify_api("PUT", "/me/player/repeat?state=" .. next_state, nil, function() Timer.CallAfter(poll_now_playing, 0.5) end)
   end
 
-  Controls.Volume.EventHandler = function(ctrl)
-    if is_polling_update then return end -- Prevent feedback loop
-    local vol = math.floor(ctrl.Value)
-    spotify_api("PUT", "/me/player/volume?volume_percent=" .. vol)
-  end
+
 
   Controls.Seek_Position.EventHandler = function(ctrl)
     local dur = tonumber(Controls.Duration_Ms.String) or 0
