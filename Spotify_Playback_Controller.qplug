@@ -1,10 +1,10 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller",
-  Version = "1.1.5",
+  Version = "1.1.6",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
-  Author = "Dustin Bennett - Telsystems",
+  Author = "Dustin Bennett",
   Description = "Full Spotify playback control with OAuth PKCE auth, now-playing metadata, album art, and transport controls."
 }
 
