@@ -153,6 +153,7 @@ if Controls then
   local poll_timer = Timer.New()
   local is_polling_update = false -- Guard against feedback loops on bidirectional controls
   local auth_code_used = false -- Prevent duplicate token exchange attempts
+  local last_device_id = nil -- Cache last known device for targeting play commands
   
   -- Forward declarations for functions with circular references
   local refresh_access_token
@@ -342,6 +343,10 @@ if Controls then
             Controls.Volume.Value       = state.device.volume_percent or 0
             Controls.Active_Device.String = state.device.name or ""
             Controls.Device_ID.String   = state.device.id or ""
+            -- Cache device ID for targeting play commands later
+            if state.device.id and state.device.id ~= "" then
+              last_device_id = state.device.id
+            end
           end
           is_polling_update = false
         end
@@ -552,11 +557,15 @@ if Controls then
   end
 
   Controls.Play.EventHandler = function()
-    spotify_api("PUT", "/me/player/play", nil, function() Timer.CallAfter(poll_now_playing, 0.5) end)
+    local endpoint = "/me/player/play"
+    if last_device_id then endpoint = endpoint .. "?device_id=" .. last_device_id end
+    spotify_api("PUT", endpoint, nil, function() Timer.CallAfter(poll_now_playing, 0.5) end)
   end
 
   Controls.Pause.EventHandler = function()
-    spotify_api("PUT", "/me/player/pause", nil, function() Timer.CallAfter(poll_now_playing, 0.5) end)
+    local endpoint = "/me/player/pause"
+    if last_device_id then endpoint = endpoint .. "?device_id=" .. last_device_id end
+    spotify_api("PUT", endpoint, nil, function() Timer.CallAfter(poll_now_playing, 0.5) end)
   end
 
   Controls.Next.EventHandler = function()
@@ -639,7 +648,9 @@ if Controls then
       local uri = playlist_uris[i]
       if uri and uri ~= "" then
         local body = rapidjson.encode({ context_uri = uri })
-        spotify_api("PUT", "/me/player/play", body, function(code)
+        local endpoint = "/me/player/play"
+        if last_device_id then endpoint = endpoint .. "?device_id=" .. last_device_id end
+        spotify_api("PUT", endpoint, body, function(code)
           if code == 204 or code == 200 then
             Timer.CallAfter(poll_now_playing, 1)
             print("[Spotify] Playing playlist: " .. Controls.Playlist_Name[i].String)
