@@ -1,0 +1,466 @@
+-- Plugin Info
+PluginInfo = {
+  Name = "Spotify Playback Controller",
+  Version = "1.0.0",
+  BuildVersion = "1.0.0.0",
+  Id = "dstn.qsys.spotify-playback-controller",
+  Author = "Dustin Bennett - Telsystems",
+  Description = "Full Spotify playback control with OAuth PKCE auth, now-playing metadata, album art, and transport controls."
+}
+
+function GetColor() return { 30, 215, 96 } end
+function GetPrettyName() return "Spotify Playback Controller" end
+
+function GetProperties()
+  return {
+    { Name = "Client ID", Type = "string", Value = "" },
+    { Name = "Redirect Port", Type = "integer", Value = 9091 },
+    { Name = "Poll Interval (s)", Type = "enum", Choices = {"1", "2", "3", "5", "10"}, Value = "3" }
+  }
+end
+
+function GetControls()
+  return {
+    -- Authentication Group
+    { Name = "Auth_URL", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Auth_Code_Input", ControlType = "Text", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Authorize", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Logout", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Auth_Status", ControlType = "Indicator", Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "User_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    
+    -- Transport Controls Group
+    { Name = "Play", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Pause", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Next", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Previous", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Shuffle", ControlType = "Button", ButtonType = "Toggle", Count = 1, PinStyle = "Both", UserPin = true },
+    { Name = "Repeat", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Repeat_State", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Is_Playing", ControlType = "Indicator", Count = 1, PinStyle = "Output", UserPin = true },
+    
+    -- Now-Playing Metadata Group
+    { Name = "Track_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Artist_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Album_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Album_Art_URL", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Progress_Ms", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "Progress_Text", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Duration_Ms", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    
+    -- Volume & Device Group
+    { Name = "Volume", ControlType = "Knob", Min = 0, Max = 100, Count = 1, PinStyle = "Both", UserPin = true },
+    { Name = "Active_Device", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    { Name = "Device_ID", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true, ReadOnly = true },
+    
+    -- Seek Control
+    { Name = "Seek_Position", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Input", UserPin = true }
+  }
+end
+
+function GetControlLayout(props)
+  local layout = {}
+  local graphics = {}
+  
+  table.insert(graphics, { Type = "Header", Text = "Spotify Playback Controller", Position = {0, 0}, Size = {400, 20} })
+  
+  -- Auth Section
+  table.insert(graphics, { Type = "GroupBox", Text = "Authentication", Position = {0, 25}, Size = {400, 100} })
+  layout["Authorize"] = { Style = "Button", Legend = "Authorize", Position = {10, 45}, Size = {80, 24} }
+  layout["Logout"] = { Style = "Button", Legend = "Logout", Position = {95, 45}, Size = {80, 24} }
+  layout["Auth_Status"] = { Style = "Indicator", Position = {180, 47}, Size = {20, 20} }
+  table.insert(graphics, { Type = "Label", Text = "User:", Position = {210, 45}, Size = {40, 24}, HTextAlign = "Right" })
+  layout["User_Name"] = { Style = "Text", Position = {255, 45}, Size = {135, 24} }
+  
+  table.insert(graphics, { Type = "Label", Text = "Auth URL:", Position = {10, 75}, Size = {70, 24}, HTextAlign = "Right" })
+  layout["Auth_URL"] = { Style = "Text", Position = {85, 75}, Size = {305, 24} }
+  
+  table.insert(graphics, { Type = "Label", Text = "Manual Code:", Position = {10, 100}, Size = {70, 24}, HTextAlign = "Right" })
+  layout["Auth_Code_Input"] = { Style = "Text", Position = {85, 100}, Size = {305, 24} }
+  
+  -- Now Playing Section
+  table.insert(graphics, { Type = "GroupBox", Text = "Now Playing", Position = {0, 130}, Size = {400, 140} })
+  table.insert(graphics, { Type = "Label", Text = "Track:", Position = {10, 150}, Size = {60, 24}, HTextAlign = "Right" })
+  layout["Track_Name"] = { Style = "Text", Position = {75, 150}, Size = {315, 24} }
+  
+  table.insert(graphics, { Type = "Label", Text = "Artist:", Position = {10, 175}, Size = {60, 24}, HTextAlign = "Right" })
+  layout["Artist_Name"] = { Style = "Text", Position = {75, 175}, Size = {315, 24} }
+  
+  table.insert(graphics, { Type = "Label", Text = "Album:", Position = {10, 200}, Size = {60, 24}, HTextAlign = "Right" })
+  layout["Album_Name"] = { Style = "Text", Position = {75, 200}, Size = {315, 24} }
+  
+  table.insert(graphics, { Type = "Label", Text = "Art URL:", Position = {10, 225}, Size = {60, 24}, HTextAlign = "Right" })
+  layout["Album_Art_URL"] = { Style = "Text", Position = {75, 225}, Size = {150, 24} }
+  
+  table.insert(graphics, { Type = "Label", Text = "Prog:", Position = {230, 225}, Size = {40, 24}, HTextAlign = "Right" })
+  layout["Progress_Text"] = { Style = "Text", Position = {275, 225}, Size = {115, 24} }
+  
+  -- Transport Section
+  table.insert(graphics, { Type = "GroupBox", Text = "Transport", Position = {0, 275}, Size = {400, 70} })
+  layout["Previous"] = { Style = "Button", Legend = "|<", Position = {10, 295}, Size = {40, 40} }
+  layout["Pause"] = { Style = "Button", Legend = "||", Position = {55, 295}, Size = {40, 40} }
+  layout["Play"] = { Style = "Button", Legend = ">", Position = {100, 295}, Size = {40, 40} }
+  layout["Next"] = { Style = "Button", Legend = ">|", Position = {145, 295}, Size = {40, 40} }
+  
+  layout["Shuffle"] = { Style = "Button", Legend = "Shuffle", Position = {200, 305}, Size = {60, 24} }
+  layout["Repeat"] = { Style = "Button", Legend = "Repeat", Position = {265, 305}, Size = {60, 24} }
+  layout["Is_Playing"] = { Style = "Indicator", Position = {340, 307}, Size = {20, 20} }
+  
+  -- Volume & Device Section
+  table.insert(graphics, { Type = "GroupBox", Text = "Volume & Device", Position = {0, 350}, Size = {400, 60} })
+  table.insert(graphics, { Type = "Label", Text = "Vol:", Position = {10, 370}, Size = {40, 24}, HTextAlign = "Right" })
+  layout["Volume"] = { Style = "Knob", Position = {55, 370}, Size = {150, 24} }
+  
+  table.insert(graphics, { Type = "Label", Text = "Device:", Position = {210, 370}, Size = {50, 24}, HTextAlign = "Right" })
+  layout["Active_Device"] = { Style = "Text", Position = {265, 370}, Size = {125, 24} }
+
+  return layout, graphics
+end
+
+if Controls then
+  local rapidjson = require("rapidjson")
+  
+  local CLIENT_ID = Properties["Client ID"].Value
+  local REDIRECT_PORT = Properties["Redirect Port"].Value
+  local POLL_INTERVAL = tonumber(Properties["Poll Interval (s)"].Value) or 3
+  
+  local REDIRECT_URI = "http://localhost:" .. tostring(REDIRECT_PORT) .. "/callback"
+  
+  local code_verifier = ""
+  local code_challenge = ""
+  local access_token = nil
+  local refresh_token = nil
+  local token_expiry = 0
+  
+  local auth_server = nil
+  local poll_timer = Timer.New()
+  
+  -- ==========================================
+  -- Utility Functions
+  -- ==========================================
+  local function format_ms(ms)
+    if not ms then return "0:00" end
+    local total_sec = math.floor(ms / 1000)
+    local min = math.floor(total_sec / 60)
+    local sec = total_sec % 60
+    return string.format("%d:%02d", min, sec)
+  end
+
+  local function url_encode(str)
+    if str then
+      str = string.gsub(str, "\n", "\r\n")
+      str = string.gsub(str, "([^%w %-%_%.%~])", function(c) return string.format("%%%02X", string.byte(c)) end)
+      str = string.gsub(str, " ", "%%20")
+    end
+    return str
+  end
+  
+  local function update_auth_status(status)
+    Controls.Auth_Status.Value = status
+  end
+
+  -- ==========================================
+  -- PKCE & Auth Generation
+  -- ==========================================
+  local function generate_code_verifier()
+    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    local result = {}
+    for i = 1, 64 do
+      local idx = math.random(1, #chars)
+      table.insert(result, chars:sub(idx, idx))
+    end
+    return table.concat(result)
+  end
+
+  local function generate_code_challenge(verifier)
+    local hash = Crypto.Digest("sha256", verifier)
+    local raw = hash:gsub("..", function(cc) return string.char(tonumber(cc, 16)) end)
+    local b64 = Crypto.Base64Encode(raw, false)
+    b64 = b64:gsub("+", "-"):gsub("/", "_")
+    return b64
+  end
+
+  -- ==========================================
+  -- API Handling
+  -- ==========================================
+  local function spotify_api(method, endpoint, body_data, callback)
+    if not access_token then return end
+    
+    if os.time() >= token_expiry then
+      refresh_access_token()
+      Timer.CallAfter(function() spotify_api(method, endpoint, body_data, callback) end, 2)
+      return
+    end
+    
+    local url = "https://api.spotify.com/v1" .. endpoint
+    local headers = {
+      ["Authorization"] = "Bearer " .. access_token,
+      ["Content-Type"] = "application/json"
+    }
+    
+    if method == "GET" then
+      HttpClient.Download({
+        Url = url, Headers = headers, Timeout = 10,
+        EventHandler = function(t, code, data, err, h)
+          if code == 401 then refresh_access_token() return end
+          if callback then callback(code, data) end
+        end
+      })
+    else
+      HttpClient.Upload({
+        Url = url, Method = method, Headers = headers,
+        Data = body_data or "", Timeout = 10,
+        EventHandler = function(t, code, data, err, h)
+          if code == 401 then refresh_access_token() return end
+          if callback then callback(code, data) end
+        end
+      })
+    end
+  end
+
+  local function fetch_user_profile()
+    spotify_api("GET", "/me", nil, function(code, data)
+      if code == 200 then
+        local profile = rapidjson.decode(data)
+        Controls.User_Name.String = profile.display_name or profile.id or ""
+        update_auth_status(1) -- Green
+      end
+    end)
+  end
+
+  local function poll_now_playing()
+    spotify_api("GET", "/me/player", nil, function(code, data)
+      if code == 200 and data and #data > 0 then
+        local state = rapidjson.decode(data)
+        if state and state.item then
+          Controls.Track_Name.String  = state.item.name or ""
+          Controls.Album_Name.String  = (state.item.album or {}).name or ""
+          Controls.Is_Playing.Boolean = state.is_playing or false
+          
+          local artists = {}
+          for _, a in ipairs(state.item.artists or {}) do
+            table.insert(artists, a.name)
+          end
+          Controls.Artist_Name.String = table.concat(artists, ", ")
+          
+          local images = (state.item.album or {}).images or {}
+          Controls.Album_Art_URL.String = images[1] and images[1].url or ""
+          
+          local prog = state.progress_ms or 0
+          local dur  = state.item.duration_ms or 1
+          Controls.Progress_Ms.Position = prog / dur
+          Controls.Progress_Text.String = format_ms(prog) .. " / " .. format_ms(dur)
+          Controls.Duration_Ms.String   = tostring(dur)
+          
+          Controls.Shuffle.Boolean      = state.shuffle_state or false
+          Controls.Repeat_State.String  = state.repeat_state or "off"
+          
+          if state.device then
+            Controls.Volume.Value       = state.device.volume_percent or 0
+            Controls.Active_Device.String = state.device.name or ""
+            Controls.Device_ID.String   = state.device.id or ""
+          end
+        end
+      elseif code == 204 then
+        Controls.Track_Name.String  = ""
+        Controls.Artist_Name.String = ""
+        Controls.Album_Name.String = ""
+        Controls.Album_Art_URL.String = ""
+        Controls.Progress_Ms.Position = 0
+        Controls.Progress_Text.String = "0:00 / 0:00"
+        Controls.Is_Playing.Boolean = false
+      end
+    end)
+  end
+
+  local function start_polling()
+    poll_timer:Stop()
+    poll_timer.EventHandler = poll_now_playing
+    poll_timer:Start(POLL_INTERVAL)
+    poll_now_playing()
+  end
+
+  local function schedule_token_refresh()
+    local delay = math.max((token_expiry - os.time()) - 60, 10)
+    Timer.CallAfter(refresh_access_token, delay)
+  end
+
+  function refresh_access_token()
+    if not refresh_token then return end
+    
+    local body = "client_id=" .. CLIENT_ID
+      .. "&grant_type=refresh_token"
+      .. "&refresh_token=" .. refresh_token
+      
+    HttpClient.Upload({
+      Url = "https://accounts.spotify.com/api/token",
+      Method = "POST",
+      Headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      Data = body,
+      EventHandler = function(tbl, http_code, data, err, hdrs)
+        if http_code == 200 then
+          local json = rapidjson.decode(data)
+          access_token = json.access_token
+          if json.refresh_token then refresh_token = json.refresh_token end
+          token_expiry = os.time() + (json.expires_in or 3600)
+          schedule_token_refresh()
+        else
+          update_auth_status(2) -- Red/Error
+          print("Failed to refresh token: " .. tostring(err))
+        end
+      end
+    })
+  end
+
+  local function exchange_code_for_token(code)
+    -- Stop server after getting code
+    if auth_server then
+        auth_server:Disconnect()
+        auth_server = nil
+    end
+    
+    local body = "client_id=" .. CLIENT_ID
+      .. "&grant_type=authorization_code"
+      .. "&code=" .. code
+      .. "&redirect_uri=" .. url_encode(REDIRECT_URI)
+      .. "&code_verifier=" .. code_verifier
+      
+    HttpClient.Upload({
+      Url = "https://accounts.spotify.com/api/token",
+      Method = "POST",
+      Headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      Data = body,
+      EventHandler = function(tbl, http_code, data, err, hdrs)
+        if http_code == 200 then
+          local json = rapidjson.decode(data)
+          access_token = json.access_token
+          refresh_token = json.refresh_token
+          token_expiry = os.time() + (json.expires_in or 3600)
+          start_polling()
+          fetch_user_profile()
+        else
+          update_auth_status(2)
+          print("Token exchange failed: " .. tostring(data))
+        end
+      end
+    })
+  end
+
+  -- ==========================================
+  -- Control Handlers
+  -- ==========================================
+  Controls.Authorize.EventHandler = function()
+    if CLIENT_ID == "" then
+      print("Error: Client ID is missing.")
+      return
+    end
+    
+    update_auth_status(3) -- Yellow/Waiting
+    
+    -- Network interface IP for redirect
+    local ip = Network.Interfaces()[1].Address
+    REDIRECT_URI = "http://" .. ip .. ":" .. tostring(REDIRECT_PORT) .. "/callback"
+    
+    code_verifier = generate_code_verifier()
+    code_challenge = generate_code_challenge(code_verifier)
+    
+    local auth_url = "https://accounts.spotify.com/authorize?"
+      .. "client_id=" .. CLIENT_ID
+      .. "&response_type=code"
+      .. "&redirect_uri=" .. url_encode(REDIRECT_URI)
+      .. "&scope=" .. url_encode("user-read-playback-state user-modify-playback-state user-read-currently-playing")
+      .. "&code_challenge_method=S256"
+      .. "&code_challenge=" .. code_challenge
+      
+    Controls.Auth_URL.String = auth_url
+    
+    -- Start TCP Server
+    if auth_server then auth_server:Disconnect() end
+    auth_server = TcpSocketServer.New()
+    auth_server.EventHandler = function(socket)
+      socket.EventHandler = function(sock, evt)
+        if evt == TcpSocket.Events.Data then
+          local data = sock:Read(sock.BufferLength)
+          local code = data:match("[?&]code=([^&%s]+)")
+          if code then
+            local html = "<html><body><h1>✅ Spotify Authorized!</h1><p>You can close this tab and return to Q-SYS.</p></body></html>"
+            local resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " .. #html .. "\r\nConnection: close\r\n\r\n" .. html
+            sock:Write(resp)
+            Timer.CallAfter(function() sock:Disconnect() end, 0.5)
+            exchange_code_for_token(code)
+          end
+        end
+      end
+    end
+    auth_server:Listen(REDIRECT_PORT)
+  end
+
+  Controls.Auth_Code_Input.EventHandler = function(ctrl)
+    if ctrl.String ~= "" then
+      exchange_code_for_token(ctrl.String)
+      ctrl.String = ""
+    end
+  end
+
+  Controls.Logout.EventHandler = function()
+    access_token = nil
+    refresh_token = nil
+    poll_timer:Stop()
+    if auth_server then auth_server:Disconnect() auth_server = nil end
+    update_auth_status(2) -- Red
+    Controls.User_Name.String = ""
+    Controls.Track_Name.String = ""
+    Controls.Artist_Name.String = ""
+    Controls.Album_Name.String = ""
+    Controls.Album_Art_URL.String = ""
+    Controls.Progress_Ms.Position = 0
+    Controls.Progress_Text.String = ""
+    Controls.Duration_Ms.String = ""
+    Controls.Active_Device.String = ""
+    Controls.Is_Playing.Boolean = false
+    Controls.Auth_URL.String = ""
+  end
+
+  Controls.Play.EventHandler = function()
+    spotify_api("PUT", "/me/player/play", nil, function() Timer.CallAfter(poll_now_playing, 0.5) end)
+  end
+
+  Controls.Pause.EventHandler = function()
+    spotify_api("PUT", "/me/player/pause", nil, function() Timer.CallAfter(poll_now_playing, 0.5) end)
+  end
+
+  Controls.Next.EventHandler = function()
+    spotify_api("POST", "/me/player/next", nil, function() Timer.CallAfter(poll_now_playing, 0.5) end)
+  end
+
+  Controls.Previous.EventHandler = function()
+    spotify_api("POST", "/me/player/previous", nil, function() Timer.CallAfter(poll_now_playing, 0.5) end)
+  end
+
+  Controls.Shuffle.EventHandler = function(ctrl)
+    local state = ctrl.Boolean and "true" or "false"
+    spotify_api("PUT", "/me/player/shuffle?state=" .. state)
+  end
+
+  Controls.Repeat.EventHandler = function()
+    local cycle = { off = "context", context = "track", track = "off" }
+    local next_state = cycle[Controls.Repeat_State.String] or "context"
+    spotify_api("PUT", "/me/player/repeat?state=" .. next_state, nil, function() Timer.CallAfter(poll_now_playing, 0.5) end)
+  end
+
+  Controls.Volume.EventHandler = function(ctrl)
+    local vol = math.floor(ctrl.Value)
+    spotify_api("PUT", "/me/player/volume?volume_percent=" .. vol)
+  end
+
+  Controls.Seek_Position.EventHandler = function(ctrl)
+    local dur = tonumber(Controls.Duration_Ms.String) or 0
+    if dur > 0 then
+      local pos_ms = math.floor(ctrl.Position * dur)
+      spotify_api("PUT", "/me/player/seek?position_ms=" .. pos_ms)
+    end
+  end
+  
+  -- Initialize
+  update_auth_status(2) -- Start logged out
+end
