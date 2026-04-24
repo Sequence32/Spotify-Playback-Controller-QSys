@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller with Art",
-  Version = "1.4.4.2",
+  Version = "1.4.4.3",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -63,7 +63,16 @@ function GetControls()
     { Name = "Refresh_Playlists", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     
     -- Device Dropdown
-    { Name = "Device_Select", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true, Choices = {} }
+    { Name = "Device_Select", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true, Choices = {} },
+
+    -- Search
+    { Name = "Search_Query", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true },
+    { Name = "Search_Execute", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Search_Result_Art", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
+    { Name = "Search_Result_Name", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
+    { Name = "Search_Result_Artist", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
+    { Name = "Search_Result_Album", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
+    { Name = "Search_Result_Play", ControlType = "Button", ButtonType = "Trigger", Count = 5, PinStyle = "Input", UserPin = true }
   }
 end
 
@@ -144,6 +153,26 @@ function GetControlLayout(props)
   layout["Playlist_Play"] = { Style = "Button", Legend = "Play", Position = {295, 520}, Size = {50, 24},
     Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
   layout["Refresh_Playlists"] = { Style = "Button", Legend = "Refresh", Position = {350, 520}, Size = {40, 24} }
+
+  -- Search Section
+  local srch_y = 585
+  local row_h  = 60
+  table.insert(graphics, { Type = "GroupBox", Text = "Search", Position = {0, srch_y - 5}, Size = {400, 5 + 40 + (5 * row_h) + 15}, Color = {30, 30, 30} })
+
+  -- Search bar + button
+  layout["Search_Query"]   = { Style = "Text",   Position = {10, srch_y + 8},  Size = {295, 24} }
+  layout["Search_Execute"] = { Style = "Button", Legend = "Search", Position = {310, srch_y + 8}, Size = {80, 24},
+    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+
+  -- Result rows (5 slots)
+  for i = 1, 5 do
+    local ry = srch_y + 40 + ((i - 1) * row_h)
+    layout["Search_Result_Art "    .. i] = { Style = "Media",  Position = {10,  ry},      Size = {50, 50} }
+    layout["Search_Result_Name "   .. i] = { Style = "Text",   Position = {68,  ry},      Size = {260, 24} }
+    layout["Search_Result_Artist " .. i] = { Style = "Text",   Position = {68,  ry + 26}, Size = {180, 20} }
+    layout["Search_Result_Play "   .. i] = { Style = "Button", Legend = "Play", Position = {330, ry + 13}, Size = {60, 24},
+      Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+  end
 
   return layout, graphics
 end
@@ -790,6 +819,78 @@ if Controls then
     original_fetch_playlists()
     fetch_devices()
     device_refresh_timer:Start(30)
+  end
+
+  -- ==========================================
+  -- Search Logic
+  -- ==========================================
+  local search_uris = {}
+
+  local function clear_search_results()
+    for i = 1, 5 do
+      Controls.Search_Result_Art[i].String    = ""
+      Controls.Search_Result_Name[i].String   = ""
+      Controls.Search_Result_Artist[i].String = ""
+      Controls.Search_Result_Album[i].String  = ""
+      search_uris[i] = nil
+    end
+  end
+
+  local function do_search()
+    local query = Controls.Search_Query.String
+    if not query or query == "" then return end
+    local encoded = query:gsub(" ", "%%20"):gsub("&", "%%26"):gsub("=", "%%3D")
+    clear_search_results()
+    spotify_api("GET", "/search?q=" .. encoded .. "&type=track&limit=5", nil, function(code, data)
+      if code == 200 and data then
+        local result = rapidjson.decode(data)
+        if result and type(result.tracks) == "table" and type(result.tracks.items) == "table" then
+          for i, track in ipairs(result.tracks.items) do
+            if i > 5 then break end
+            Controls.Search_Result_Name[i].String = track.name or ""
+            search_uris[i] = track.uri or ""
+            local artists = {}
+            if type(track.artists) == "table" then
+              for _, a in ipairs(track.artists) do table.insert(artists, a.name or "") end
+            end
+            Controls.Search_Result_Artist[i].String = table.concat(artists, ", ")
+            if type(track.album) == "table" then
+              Controls.Search_Result_Album[i].String = track.album.name or ""
+              if type(track.album.images) == "table" and track.album.images[1] then
+                local art_url = track.album.images[1].url or ""
+                Controls.Search_Result_Art[i].String = art_url ~= "" and
+                  ('{"Protocol":"Image","URLs":["' .. art_url .. '"]}') or ""
+              end
+            end
+          end
+          print("[Spotify] Search: " .. #result.tracks.items .. " result(s) for '" .. query .. "'")
+        end
+      else
+        print("[Spotify] Search failed. Code: " .. tostring(code))
+      end
+    end)
+  end
+
+  Controls.Search_Execute.EventHandler = function() do_search() end
+  Controls.Search_Query.EventHandler   = function() do_search() end
+
+  for i = 1, 5 do
+    Controls.Search_Result_Play[i].EventHandler = function()
+      local uri = search_uris[i]
+      if uri and uri ~= "" then
+        local body = rapidjson.encode({ uris = { uri } })
+        local endpoint = "/me/player/play"
+        if last_device_id then endpoint = endpoint .. "?device_id=" .. last_device_id end
+        spotify_api("PUT", endpoint, body, function(code)
+          if code == 204 or code == 200 then
+            Timer.CallAfter(poll_now_playing, 1)
+            print("[Spotify] Playing: " .. Controls.Search_Result_Name[i].String)
+          else
+            print("[Spotify] Play track failed. Code: " .. tostring(code))
+          end
+        end)
+      end
+    end
   end
 
   -- Initialize
