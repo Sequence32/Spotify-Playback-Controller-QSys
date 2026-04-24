@@ -97,7 +97,7 @@ function GetControlLayout(props)
   table.insert(graphics, { Type = "GroupBox", Text = "Now Playing", Position = {0, 130}, Size = {400, 220}, Color = {40, 40, 40} })
   
   -- Album Art Display
-  layout["Album_Art"] = { Style = "Text", Position = {10, 150}, Size = {140, 140} }
+  layout["Album_Art"] = { Style = "Media", Position = {10, 150}, Size = {140, 140} }
   
   -- Track metadata (right of art)
   table.insert(graphics, { Type = "Label", Text = "Track:", Position = {155, 155}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
