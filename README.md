@@ -4,7 +4,7 @@ A professional Q-SYS plugin that provides full Spotify playback control through 
 
 ![Q-SYS](https://img.shields.io/badge/Q--SYS-Plugin-blue)
 ![Spotify](https://img.shields.io/badge/Spotify-Web%20API-1DB954)
-![Version](https://img.shields.io/badge/Version-1.4.3-orange)
+![Version](https://img.shields.io/badge/Version-1.4.5-orange)
 
 > **🚧 Active Development** — This plugin is under active development as of April 2026. Features, controls, and authentication flows may change between versions. Feedback and contributions are welcome!
 
@@ -15,13 +15,13 @@ A professional Q-SYS plugin that provides full Spotify playback control through 
 - **OAuth PKCE Authentication** — Secure login without exposing client secrets
 - **Mobile-Friendly Login** — Browse to the Core's IP from any device; includes a code-paste fallback for remote auth
 - **Inline Album Art** — Album artwork rendered directly in the plugin using Q-SYS Media controls
-- **Visual Progress Bar** — Horizontal meter that tracks song playback in real time
+- **Visual Progress Bar** — Horizontal meter that tracks song playback in real time, complete with draggable seeking
 - **Spotify-Themed UI** — Dark mode with Spotify green (#1DB954) accent colors on all controls
 - **Transport Controls** — Play, Pause, Next, Previous, Shuffle, Repeat
 - **Now Playing** — Track name, artist, album, progress text, and duration
-- **Playlist Browsing** — View and play your top 10 playlists with cover art
-- **Device Selection** — Browse and switch between up to 5 Spotify Connect devices
-- **Seek** — Seek to any position in the current track
+- **Playlist Browsing** — Dropdown menu of your top playlists with auto-play on selection
+- **Device Selection** — Dropdown menu to switch between Spotify Connect devices, featuring 30-second auto-refresh and unique ID tags for duplicate names
+- **Song Search & Autocomplete** — Dedicated tab to search the Spotify catalog, featuring live dropdown suggestions, pagination, and one-click playback
 - **Auto Token Refresh** — Tokens refresh automatically before expiry
 - **Full URL Paste** — Paste an entire redirect URL when manually entering auth codes; the plugin auto-extracts the code
 
@@ -142,21 +142,25 @@ In the plugin's **Properties** panel, set:
 | `Device_ID` | Text (output) | Device ID (for debugging) |
 | `Seek_Position` | Knob 0-100% (input) | Seek to a percentage of the track |
 
-### Playlists (10 slots)
+### Playlists & Devices
 | Control | Type | Description |
 |---------|------|-------------|
 | `Refresh_Playlists` | Trigger | Fetch/refresh the user's playlists |
-| `Playlist_Name 1-10` | Text (output) | Playlist names |
-| `Playlist_Art 1-10` | Text (output) | Playlist cover art URLs |
-| `Playlist_Play 1-10` | Trigger | Start playing that playlist |
+| `Playlist_Select` | ComboBox (input) | Dropdown to select a playlist (auto-plays on change) |
+| `Playlist_Play` | Trigger | Start playing the selected playlist |
+| `Device_Select` | ComboBox (input) | Dropdown to switch active playback device (auto-refreshes every 30s) |
 
-### Device Selection (5 slots)
+### Search
 | Control | Type | Description |
 |---------|------|-------------|
-| `Refresh_Devices` | Trigger | Fetch available Spotify Connect devices |
-| `Device_Name 1-5` | Text (output) | Device names (* marks active) |
-| `Device_Type 1-5` | Text (output) | Device type (Computer, Smartphone, Speaker, etc.) |
-| `Device_Select 1-5` | Trigger | Transfer playback to this device |
+| `Search_Query` | Text (input) | Text box to enter search queries |
+| `Search_Suggestions` | ListBox (output) | Autocomplete dropdown showing top artist and track matches |
+| `Search_Execute` | Trigger | Manually execute a full search |
+| `Search_Prev` / `Search_Next` | Trigger | Navigate through pages of search results |
+| `Search_Result_Art 1-5` | Media (output) | Album art for search results |
+| `Search_Result_Name 1-5` | Text (output) | Track names from search |
+| `Search_Result_Artist 1-5` | Text (output) | Artist names from search |
+| `Search_Result_Play 1-5` | Trigger | Instantly start playing the selected search result |
 
 ---
 
@@ -183,11 +187,12 @@ The plugin features a Spotify-themed dark interface with the following sections:
 | Section | Description |
 |---------|-------------|
 | **Authentication** | Authorize/Logout buttons, auth status LED, user name, auth URL, manual code input |
-| **Now Playing** | 140x140 album art, track/artist/album metadata, progress text, progress meter bar |
+| **Now Playing Tab** | 140x140 album art, track/artist/album metadata, progress text, and draggable progress meter bar |
 | **Transport** | Play, Pause, Previous, Next buttons with Spotify green styling; Shuffle/Repeat toggles |
 | **Active Device** | Currently active Spotify Connect device name |
-| **Playlists** | 10-slot playlist browser with Play buttons |
-| **Devices** | 5-slot device browser with Select buttons for playback transfer |
+| **Playlists** | ComboBox dropdown for playlist selection with auto-play on selection |
+| **Devices** | ComboBox dropdown for device selection with auto-refresh and unique device IDs |
+| **Search Tab** | Song search interface with autocomplete dropdown suggestions, pagination (Next/Prev), and 5 playable result rows with album art |
 
 ---
 
@@ -248,6 +253,17 @@ The plugin features a Spotify-themed dark interface with the following sections:
 ---
 
 ## Changelog
+
+### v1.4.5
+- **Tabbed Interface:** Reorganized the UI into "Now Playing" and "Search" tabs
+- **Advanced Search:** Added dedicated search interface with album art and direct play buttons
+- **Search Pagination:** Added Next/Prev buttons to browse more than 5 results at a time
+- **Autocomplete Suggestions:** Live dropdown populates with top artist/track matches as you type
+- **ComboBox Dropdowns:** Replaced bulky slot grids for Devices and Playlists with clean dropdown menus
+- **Auto-Play Playlists:** Selecting a new playlist from the dropdown now automatically starts playback
+- **Device Refresh:** Devices dropdown now automatically refreshes in the background every 30 seconds
+- **Unique Device IDs:** Appended short ID strings to identical device names (e.g. "Web Player") so they can be distinguished
+- **Draggable Seek Bar:** Visual progress meter is now draggable for immediate track seeking
 
 ### v1.4.3
 - Accept full redirect URL paste in both Manual Code field and web form (auto-extracts auth code)
