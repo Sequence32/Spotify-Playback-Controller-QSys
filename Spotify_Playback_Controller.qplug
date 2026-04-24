@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller with Art",
-  Version = "1.4.4",
+  Version = "1.4.4.1",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -57,17 +57,13 @@ function GetControls()
     -- Seek Control
     { Name = "Seek_Position", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Input", UserPin = true },
     
-    -- Playlist Group (10 slots)
+    -- Playlist Dropdown
+    { Name = "Playlist_Select", ControlType = "ComboBox", Count = 1, PinStyle = "Both", UserPin = true },
+    { Name = "Playlist_Play", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     { Name = "Refresh_Playlists", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
-    { Name = "Playlist_Name", ControlType = "Text", Count = 10, PinStyle = "Output", UserPin = true },
-    { Name = "Playlist_Art", ControlType = "Text", Count = 10, PinStyle = "Output", UserPin = true },
-    { Name = "Playlist_Play", ControlType = "Button", ButtonType = "Trigger", Count = 10, PinStyle = "Input", UserPin = true },
     
-    -- Device Selection Group (5 slots)
-    { Name = "Refresh_Devices", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
-    { Name = "Device_Name", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
-    { Name = "Device_Type", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
-    { Name = "Device_Select", ControlType = "Button", ButtonType = "Trigger", Count = 5, PinStyle = "Input", UserPin = true }
+    -- Device Dropdown
+    { Name = "Device_Select", ControlType = "ComboBox", Count = 1, PinStyle = "Both", UserPin = true }
   }
 end
 
@@ -136,33 +132,18 @@ function GetControlLayout(props)
   layout["Is_Playing"] = { Style = "Indicator", Position = {340, 387}, Size = {20, 20}, Color = {30, 215, 96}, OffColor = {70, 70, 70}, UnlinkOffColor = true }
   layout["Repeat_State"] = { Style = "Text", Position = {340, 365}, Size = {50, 20} }
   
-  -- Device Section
-  table.insert(graphics, { Type = "GroupBox", Text = "Active Device", Position = {0, 430}, Size = {400, 60}, Color = {40, 40, 40} })
-  
-  table.insert(graphics, { Type = "Label", Text = "Device:", Position = {10, 450}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
-  layout["Active_Device"] = { Style = "Text", Position = {65, 450}, Size = {125, 24} }
-  -- Playlist Section
-  local pl_y = 500
-  table.insert(graphics, { Type = "GroupBox", Text = "Playlists", Position = {0, pl_y - 5}, Size = {400, 290} })
-  layout["Refresh_Playlists"] = { Style = "Button", Legend = "Refresh", Position = {10, pl_y + 10}, Size = {80, 24} }
-  for i = 1, 10 do
-    local row_y = pl_y + 10 + (i * 26)
-    layout["Playlist_Name " .. i] = { Style = "Text", Position = {10, row_y}, Size = {310, 24} }
-    layout["Playlist_Play " .. i] = { Style = "Button", Legend = "Play", Position = {325, row_y}, Size = {65, 24},
-      Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-  end
+  -- Device Dropdown Section
+  table.insert(graphics, { Type = "GroupBox", Text = "Playback Device", Position = {0, 430}, Size = {400, 60}, Color = {40, 40, 40} })
+  table.insert(graphics, { Type = "Label", Text = "Device:", Position = {10, 450}, Size = {55, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+  layout["Device_Select"] = { Style = "ComboBox", Position = {70, 450}, Size = {320, 24} }
 
-  -- Device Selection Section
-  local dev_y = 800
-  table.insert(graphics, { Type = "GroupBox", Text = "Devices", Position = {0, dev_y - 5}, Size = {400, 170} })
-  layout["Refresh_Devices"] = { Style = "Button", Legend = "Refresh", Position = {10, dev_y + 10}, Size = {80, 24} }
-  for i = 1, 5 do
-    local row_y = dev_y + 10 + (i * 26)
-    layout["Device_Name " .. i] = { Style = "Text", Position = {10, row_y}, Size = {230, 24} }
-    layout["Device_Type " .. i] = { Style = "Text", Position = {245, row_y}, Size = {80, 24} }
-    layout["Device_Select " .. i] = { Style = "Button", Legend = "Select", Position = {330, row_y}, Size = {60, 24},
-      Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-  end
+  -- Playlist Dropdown Section
+  table.insert(graphics, { Type = "GroupBox", Text = "Playlists", Position = {0, 500}, Size = {400, 70}, Color = {40, 40, 40} })
+  table.insert(graphics, { Type = "Label", Text = "Playlist:", Position = {10, 520}, Size = {55, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+  layout["Playlist_Select"] = { Style = "ComboBox", Position = {70, 520}, Size = {220, 24} }
+  layout["Playlist_Play"] = { Style = "Button", Legend = "Play", Position = {295, 520}, Size = {50, 24},
+    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+  layout["Refresh_Playlists"] = { Style = "Button", Legend = "Refresh", Position = {350, 520}, Size = {40, 24} }
 
   return layout, graphics
 end
@@ -682,121 +663,131 @@ if Controls then
   end
   
   -- ==========================================
-  -- Playlist Logic
+  -- Playlist Dropdown Logic
   -- ==========================================
-  local playlist_uris = {} -- Store URIs for the 10 slots
-  
+  local playlist_uris = {} -- name -> uri map
+  local playlist_names = {}
+
   fetch_playlists = function()
-    spotify_api("GET", "/me/playlists?limit=10", nil, function(code, data)
+    spotify_api("GET", "/me/playlists?limit=50", nil, function(code, data)
       if code == 200 and data then
         local result = rapidjson.decode(data)
-        -- Clear all slots first
-        for i = 1, 10 do
-          Controls.Playlist_Name[i].String = ""
-          Controls.Playlist_Art[i].String = ""
-          playlist_uris[i] = nil
-        end
-        -- Fill slots with playlist data
-        if result and result.items then
-          for i, pl in ipairs(result.items) do
-            if i > 10 then break end
-            Controls.Playlist_Name[i].String = pl.name or ""
-            playlist_uris[i] = pl.uri or ""
-            -- Grab playlist cover art (first image, with type safety)
-            local art_url = ""
-            if type(pl.images) == "table" and pl.images[1] then
-              art_url = pl.images[1].url or ""
-            end
-            Controls.Playlist_Art[i].String = art_url
+        playlist_uris = {}
+        playlist_names = {}
+        if result and type(result.items) == "table" then
+          for _, pl in ipairs(result.items) do
+            local name = pl.name or "Unknown"
+            playlist_uris[name] = pl.uri or ""
+            table.insert(playlist_names, name)
           end
-          print("[Spotify] Loaded " .. #result.items .. " playlists.")
+          Controls.Playlist_Select.Choices = playlist_names
+          if #playlist_names > 0 then
+            Controls.Playlist_Select.String = playlist_names[1]
+          end
+          print("[Spotify] Loaded " .. #playlist_names .. " playlists.")
         end
       else
         print("[Spotify] Failed to fetch playlists. Code: " .. tostring(code))
       end
     end)
   end
-  
+
   Controls.Refresh_Playlists.EventHandler = function()
     fetch_playlists()
   end
-  
-  -- Wire up each playlist play button
-  for i = 1, 10 do
-    Controls.Playlist_Play[i].EventHandler = function()
-      local uri = playlist_uris[i]
-      if uri and uri ~= "" then
-        local body = rapidjson.encode({ context_uri = uri })
-        local endpoint = "/me/player/play"
-        if last_device_id then endpoint = endpoint .. "?device_id=" .. last_device_id end
-        spotify_api("PUT", endpoint, body, function(code)
-          if code == 204 or code == 200 then
-            Timer.CallAfter(poll_now_playing, 1)
-            print("[Spotify] Playing playlist: " .. Controls.Playlist_Name[i].String)
-          else
-            print("[Spotify] Failed to start playlist. Code: " .. tostring(code))
-          end
-        end)
-      end
+
+  Controls.Playlist_Play.EventHandler = function()
+    local selected = Controls.Playlist_Select.String
+    local uri = playlist_uris[selected]
+    if uri and uri ~= "" then
+      local body = rapidjson.encode({ context_uri = uri })
+      local endpoint = "/me/player/play"
+      if last_device_id then endpoint = endpoint .. "?device_id=" .. last_device_id end
+      spotify_api("PUT", endpoint, body, function(code)
+        if code == 204 or code == 200 then
+          Timer.CallAfter(poll_now_playing, 1)
+          print("[Spotify] Playing playlist: " .. selected)
+        else
+          print("[Spotify] Failed to start playlist. Code: " .. tostring(code))
+        end
+      end)
+    else
+      print("[Spotify] No playlist selected or URI not found.")
     end
   end
-  
+
   -- ==========================================
-  -- Device Selection Logic
+  -- Device Dropdown Logic (auto-refresh every 30s)
   -- ==========================================
-  local device_ids = {} -- Store device IDs for the 5 slots
-  
+  local device_id_map = {} -- display name -> device id
+  local device_refresh_timer = Timer.New()
+
   local function fetch_devices()
+    if not access_token then return end
     spotify_api("GET", "/me/player/devices", nil, function(code, data)
       if code == 200 and data then
         local result = rapidjson.decode(data)
-        -- Clear all slots first
-        for i = 1, 5 do
-          Controls.Device_Name[i].String = ""
-          Controls.Device_Type[i].String = ""
-          device_ids[i] = nil
-        end
-        -- Fill slots with device data
+        device_id_map = {}
+        local names = {}
         if result and type(result.devices) == "table" then
-          for i, dev in ipairs(result.devices) do
-            if i > 5 then break end
-            local active_marker = dev.is_active and " *" or ""
-            Controls.Device_Name[i].String = (dev.name or "") .. active_marker
-            Controls.Device_Type[i].String = dev.type or ""
-            device_ids[i] = dev.id or ""
+          for _, dev in ipairs(result.devices) do
+            local label = (dev.name or "Unknown") .. " (" .. (dev.type or "?") .. ")"
+            if dev.is_active then label = label .. " *" end
+            device_id_map[label] = dev.id or ""
+            table.insert(names, label)
+            -- Auto-cache active device
+            if dev.is_active and dev.id and dev.id ~= "" then
+              last_device_id = dev.id
+            end
           end
-          print("[Spotify] Found " .. #result.devices .. " device(s).")
+          -- Preserve current selection if still in list
+          local current = Controls.Device_Select.String
+          Controls.Device_Select.Choices = names
+          local found = false
+          for _, n in ipairs(names) do if n == current then found = true break end end
+          if not found and #names > 0 then
+            Controls.Device_Select.String = names[1]
+          end
+          print("[Spotify] Refreshed " .. #names .. " device(s).")
         end
       else
         print("[Spotify] Failed to fetch devices. Code: " .. tostring(code))
       end
     end)
   end
-  
-  Controls.Refresh_Devices.EventHandler = function()
-    fetch_devices()
-  end
-  
-  -- Wire up each device select button
-  for i = 1, 5 do
-    Controls.Device_Select[i].EventHandler = function()
-      local dev_id = device_ids[i]
-      if dev_id and dev_id ~= "" then
-        local body = rapidjson.encode({ device_ids = { dev_id }, play = true })
-        spotify_api("PUT", "/me/player", body, function(code)
-          if code == 204 or code == 200 then
-            last_device_id = dev_id
-            print("[Spotify] Transferred playback to: " .. Controls.Device_Name[i].String)
-            Timer.CallAfter(poll_now_playing, 1)
-            Timer.CallAfter(fetch_devices, 2) -- Refresh to update active marker
-          else
-            print("[Spotify] Failed to transfer playback. Code: " .. tostring(code))
-          end
-        end)
-      end
+
+  -- Transfer playback when user picks a device from dropdown
+  Controls.Device_Select.EventHandler = function(ctrl)
+    local dev_id = device_id_map[ctrl.String]
+    if dev_id and dev_id ~= "" then
+      local body = rapidjson.encode({ device_ids = { dev_id }, play = false })
+      spotify_api("PUT", "/me/player", body, function(code)
+        if code == 204 or code == 200 then
+          last_device_id = dev_id
+          print("[Spotify] Transferred to device: " .. ctrl.String)
+          Timer.CallAfter(poll_now_playing, 1)
+          Timer.CallAfter(fetch_devices, 2)
+        else
+          print("[Spotify] Transfer failed. Code: " .. tostring(code))
+        end
+      end)
     end
   end
-  
+
+  -- Auto-refresh devices every 30 seconds
+  device_refresh_timer.EventHandler = function()
+    fetch_devices()
+    device_refresh_timer:Start(30)
+  end
+
+  -- Hook into post-auth to kick off initial fetches
+  local original_fetch_playlists = fetch_playlists
+  fetch_playlists = function()
+    original_fetch_playlists()
+    fetch_devices()
+    device_refresh_timer:Start(30)
+  end
+
   -- Initialize
   update_auth_status(2) -- Start as logged out
   print("[Spotify] Plugin initialized. Set Client ID in properties and press Authorize.")
