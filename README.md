@@ -7,6 +7,8 @@ A professional Q-SYS plugin that provides full Spotify playback control through 
 ![Version](https://img.shields.io/badge/Version-1.4.3-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+> **🚧 Active Development** — This plugin is under active development as of April 2026. Features, controls, and authentication flows may change between versions. Feedback and contributions are welcome!
+
 ---
 
 ## Features
