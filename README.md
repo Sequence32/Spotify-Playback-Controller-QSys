@@ -15,7 +15,7 @@ A professional Q-SYS plugin that provides full Spotify playback control through 
 - **OAuth PKCE Authentication** — Secure login without exposing client secrets
 - **Mobile-Friendly Login** — Browse to the Core's IP from any device; includes a code-paste fallback for remote auth
 - **Inline Album Art** — Album artwork rendered directly in the plugin using Q-SYS Media controls
-- **Visual Progress Bar** — Horizontal meter that tracks song playback in real time, complete with draggable seeking
+- **Visual Progress Bar** — Horizontal meter that tracks song playback in real time
 - **Spotify-Themed UI** — Dark mode with Spotify green (#1DB954) accent colors on all controls
 - **Transport Controls** — Play, Pause, Next, Previous, Shuffle, Repeat
 - **Now Playing** — Track name, artist, album, progress text, and duration
@@ -263,7 +263,6 @@ The plugin features a Spotify-themed dark interface with the following sections:
 - **Auto-Play Playlists:** Selecting a new playlist from the dropdown now automatically starts playback
 - **Device Refresh:** Devices dropdown now automatically refreshes in the background every 30 seconds
 - **Unique Device IDs:** Appended short ID strings to identical device names (e.g. "Web Player") so they can be distinguished
-- **Draggable Seek Bar:** Visual progress meter is now draggable for immediate track seeking
 
 ### v1.4.3
 - Accept full redirect URL paste in both Manual Code field and web form (auto-extracts auth code)
