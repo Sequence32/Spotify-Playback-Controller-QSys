@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller with Art",
-  Version = "1.4.5.004",
+  Version = "1.4.5.005",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -801,7 +801,8 @@ if Controls then
         local names = {}
         if result and type(result.devices) == "table" then
           for _, dev in ipairs(result.devices) do
-            local label = (dev.name or "Unknown") .. " (" .. (dev.type or "?") .. ")"
+            local short_id = string.sub(dev.id or "????", 1, 4)
+            local label = (dev.name or "Unknown") .. " [" .. (dev.type or "?") .. " - " .. short_id .. "]"
             if dev.is_active then label = label .. " *" end
             device_id_map[label] = dev.id or ""
             table.insert(names, label)
