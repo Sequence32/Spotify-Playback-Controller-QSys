@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller with Art",
-  Version = "1.4.2",
+  Version = "1.4.3",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -533,6 +533,9 @@ if Controls then
           local submit_code = data:match("/submit_code%?code=([^%s&]+)")
           if submit_code then
             submit_code = submit_code:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)
+            -- Parse code from full URL if user pasted the entire redirect URL
+            local parsed = submit_code:match("[?&]code=([^&]+)")
+            if parsed then submit_code = parsed end
             local html = "<html><head><style>"
               .. "body{font-family:Arial,sans-serif;background:#121212;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}"
               .. ".box{text-align:center;padding:40px;border-radius:16px;background:#282828}"
@@ -583,12 +586,12 @@ if Controls then
             .. "<p>Connect your Spotify account to enable playback control.</p>"
             .. "<a class='btn' href='" .. current_auth_url .. "' target='_blank'>Step 1: Log in with Spotify</a>"
             .. "<div class='sep'>"
-            .. "<p style='color:#fff;font-weight:bold;font-size:15px'>Step 2: Paste the authorization code</p>"
+            .. "<p style='color:#fff;font-weight:bold;font-size:15px'>Step 2: Paste the URL or code</p>"
             .. "<div class='step'>After logging in, you may see an error page.</div>"
-            .. "<div class='step'>Look at the <b>URL bar</b> and find <b>code=</b></div>"
-            .. "<div class='step'>Copy everything after <b>code=</b></div>"
+            .. "<div class='step'>Just <b>copy the entire URL</b> from the address bar</div>"
+            .. "<div class='step'>Paste it below and hit Submit</div>"
             .. "<form action='/submit_code' method='GET'>"
-            .. "<input class='cin' type='text' name='code' placeholder='Paste auth code here...'>"
+            .. "<input class='cin' type='text' name='code' placeholder='Paste the full URL or auth code here...'>"
             .. "<br><button type='submit' class='sub'>Submit Code</button>"
             .. "</form>"
             .. "</div>"
@@ -606,7 +609,11 @@ if Controls then
 
   Controls.Auth_Code_Input.EventHandler = function(ctrl)
     if ctrl.String ~= "" then
-      exchange_code_for_token(ctrl.String)
+      local input = ctrl.String
+      -- Parse code from full URL if user pasted the entire redirect URL
+      local parsed = input:match("[?&]code=([^&%s]+)")
+      if parsed then input = parsed end
+      exchange_code_for_token(input)
       ctrl.String = ""
     end
   end
