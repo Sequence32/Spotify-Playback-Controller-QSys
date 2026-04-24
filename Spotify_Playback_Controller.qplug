@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller with Art",
-  Version = "1.4.5.005",
+  Version = "1.4.5.006",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -74,7 +74,8 @@ function GetControls()
     { Name = "Search_Result_Album", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
     { Name = "Search_Result_Play", ControlType = "Button", ButtonType = "Trigger", Count = 5, PinStyle = "Input", UserPin = true },
     { Name = "Search_Prev", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
-    { Name = "Search_Next", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true }
+    { Name = "Search_Next", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Search_Suggestions", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true, Choices = {} }
   }
 end
 
@@ -173,7 +174,7 @@ function GetControlLayout(props)
     -- ==== PAGE 2: SEARCH ====
     local srch_y = 130
     local row_h  = 60
-    table.insert(graphics, { Type = "GroupBox", Text = "Search", Position = {0, srch_y - 5}, Size = {400, 5 + 40 + (5 * row_h) + 15}, Color = {30, 30, 30} })
+    table.insert(graphics, { Type = "GroupBox", Text = "Search", Position = {0, srch_y - 5}, Size = {400, 5 + 140 + (5 * row_h) + 15}, Color = {30, 30, 30} })
   
     -- Search bar + button
     layout["Search_Query"]   = { Style = "Text",   Position = {10, srch_y + 8},  Size = {185, 24} }
@@ -183,10 +184,13 @@ function GetControlLayout(props)
       Color = {40, 40, 40}, OffColor = {20, 20, 20}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
     layout["Search_Next"] = { Style = "Button", Legend = ">", Position = {330, srch_y + 8}, Size = {60, 24},
       Color = {40, 40, 40}, OffColor = {20, 20, 20}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+
+    -- Suggestions Dropdown ListBox
+    layout["Search_Suggestions"] = { Style = "ListBox", Position = {10, srch_y + 35}, Size = {185, 100} }
   
     -- Result rows (5 slots)
     for i = 1, 5 do
-      local ry = srch_y + 40 + ((i - 1) * row_h)
+      local ry = srch_y + 140 + ((i - 1) * row_h)
       layout["Search_Result_Art "    .. i] = { Style = "Media",  Position = {10,  ry},      Size = {50, 50} }
       layout["Search_Result_Name "   .. i] = { Style = "Text",   Position = {68,  ry},      Size = {260, 24} }
       layout["Search_Result_Artist " .. i] = { Style = "Text",   Position = {68,  ry + 26}, Size = {180, 20} }
@@ -915,12 +919,72 @@ if Controls then
 
   Controls.Search_Execute.EventHandler = function()
     search_offset = 0
+    Controls.Search_Suggestions.Choices = {}
     do_search()
   end
   
+  local last_query = ""
+  local is_updating_query = false
+
+  local function fetch_suggestions(query)
+    if not query or query == "" then
+      Controls.Search_Suggestions.Choices = {}
+      return
+    end
+    local encoded = query:gsub(" ", "%%20"):gsub("&", "%%26"):gsub("=", "%%3D")
+    spotify_api("GET", "/search?q=" .. encoded .. "&type=artist,track&limit=5", nil, function(code, data)
+      if code == 200 and data then
+        local result = rapidjson.decode(data)
+        local suggestions = {}
+        if result.artists and result.artists.items then
+          for i, artist in ipairs(result.artists.items) do
+            if i > 2 then break end
+            table.insert(suggestions, "Artist: " .. (artist.name or ""))
+          end
+        end
+        if result.tracks and result.tracks.items then
+          for i, track in ipairs(result.tracks.items) do
+            if i > 3 then break end
+            table.insert(suggestions, "Track: " .. (track.name or "") .. " - " .. (track.artists[1] and track.artists[1].name or ""))
+          end
+        end
+        Controls.Search_Suggestions.Choices = suggestions
+      end
+    end)
+  end
+
+  local query_poll_timer = Timer.New()
+  query_poll_timer.EventHandler = function()
+    if is_updating_query then return end
+    local current_query = Controls.Search_Query.String
+    if current_query ~= last_query then
+      last_query = current_query
+      fetch_suggestions(current_query)
+    end
+  end
+  query_poll_timer:Start(0.3)
+
   Controls.Search_Query.EventHandler = function()
-    search_offset = 0
-    do_search()
+    if is_updating_query then return end
+    local current_query = Controls.Search_Query.String
+    if current_query ~= last_query then
+      last_query = current_query
+      fetch_suggestions(current_query)
+    end
+  end
+
+  Controls.Search_Suggestions.EventHandler = function()
+    local sel = Controls.Search_Suggestions.String
+    if sel and sel ~= "" then
+      local clean_query = sel:gsub("^Artist: ", ""):gsub("^Track: ", "")
+      is_updating_query = true
+      Controls.Search_Query.String = clean_query
+      last_query = clean_query
+      Controls.Search_Suggestions.Choices = {}
+      is_updating_query = false
+      search_offset = 0
+      do_search()
+    end
   end
   
   Controls.Search_Next.EventHandler = function()
