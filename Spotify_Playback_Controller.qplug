@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller with Art",
-  Version = "1.4.4.1",
+  Version = "1.4.4.2",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -58,12 +58,12 @@ function GetControls()
     { Name = "Seek_Position", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Input", UserPin = true },
     
     -- Playlist Dropdown
-    { Name = "Playlist_Select", ControlType = "ComboBox", Count = 1, PinStyle = "Both", UserPin = true },
+    { Name = "Playlist_Select", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true, Choices = {} },
     { Name = "Playlist_Play", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     { Name = "Refresh_Playlists", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     
     -- Device Dropdown
-    { Name = "Device_Select", ControlType = "ComboBox", Count = 1, PinStyle = "Both", UserPin = true }
+    { Name = "Device_Select", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true, Choices = {} }
   }
 end
 
@@ -721,6 +721,7 @@ if Controls then
   -- ==========================================
   local device_id_map = {} -- display name -> device id
   local device_refresh_timer = Timer.New()
+  local is_updating_devices = false -- Guard against EventHandler firing during Choices update
 
   local function fetch_devices()
     if not access_token then return end
@@ -742,7 +743,9 @@ if Controls then
           end
           -- Preserve current selection if still in list
           local current = Controls.Device_Select.String
+          is_updating_devices = true
           Controls.Device_Select.Choices = names
+          is_updating_devices = false
           local found = false
           for _, n in ipairs(names) do if n == current then found = true break end end
           if not found and #names > 0 then
@@ -758,6 +761,7 @@ if Controls then
 
   -- Transfer playback when user picks a device from dropdown
   Controls.Device_Select.EventHandler = function(ctrl)
+    if is_updating_devices then return end -- Prevent feedback during refresh
     local dev_id = device_id_map[ctrl.String]
     if dev_id and dev_id ~= "" then
       local body = rapidjson.encode({ device_ids = { dev_id }, play = false })
