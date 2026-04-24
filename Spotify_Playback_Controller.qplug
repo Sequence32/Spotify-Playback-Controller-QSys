@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller with Art",
-  Version = "1.4.5.0",
+  Version = "1.4.5.003",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -72,17 +72,27 @@ function GetControls()
     { Name = "Search_Result_Name", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
     { Name = "Search_Result_Artist", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
     { Name = "Search_Result_Album", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
-    { Name = "Search_Result_Play", ControlType = "Button", ButtonType = "Trigger", Count = 5, PinStyle = "Input", UserPin = true }
+    { Name = "Search_Result_Play", ControlType = "Button", ButtonType = "Trigger", Count = 5, PinStyle = "Input", UserPin = true },
+    { Name = "Search_Prev", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Search_Next", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true }
+  }
+end
+
+function GetPages(props)
+  return {
+    { name = "Now Playing" },
+    { name = "Search" }
   }
 end
 
 function GetControlLayout(props)
   local layout = {}
   local graphics = {}
+  local current_page = props["page_index"].Value
   
   table.insert(graphics, { Type = "Header", Text = "Spotify Playback Controller", Position = {0, 0}, Size = {400, 20} })
   
-  -- Auth Section
+  -- Auth Section (Global)
   table.insert(graphics, { Type = "GroupBox", Text = "Authentication", Position = {0, 25}, Size = {400, 100} })
   layout["Authorize"] = { Style = "Button", Legend = "Authorize", Position = {10, 45}, Size = {80, 24},
     Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
@@ -98,80 +108,91 @@ function GetControlLayout(props)
   table.insert(graphics, { Type = "Label", Text = "Manual Code:", Position = {10, 100}, Size = {70, 24}, HTextAlign = "Right" })
   layout["Auth_Code_Input"] = { Style = "Text", Position = {85, 100}, Size = {305, 24} }
   
-  -- Now Playing Section (with Album Art)
-  table.insert(graphics, { Type = "GroupBox", Text = "Now Playing", Position = {0, 130}, Size = {400, 220}, Color = {40, 40, 40} })
-  
-  -- Album Art Display
-  layout["Album_Art"] = { Style = "Media", Position = {10, 150}, Size = {140, 140} }
-  
-  -- Track metadata (right of art)
-  table.insert(graphics, { Type = "Label", Text = "Track:", Position = {155, 155}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
-  layout["Track_Name"] = { Style = "Text", Position = {210, 155}, Size = {180, 24} }
-  
-  table.insert(graphics, { Type = "Label", Text = "Artist:", Position = {155, 180}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
-  layout["Artist_Name"] = { Style = "Text", Position = {210, 180}, Size = {180, 24} }
-  
-  table.insert(graphics, { Type = "Label", Text = "Album:", Position = {155, 205}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
-  layout["Album_Name"] = { Style = "Text", Position = {210, 205}, Size = {180, 24} }
-  
-  table.insert(graphics, { Type = "Label", Text = "Prog:", Position = {155, 235}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
-  layout["Progress_Text"] = { Style = "Text", Position = {210, 235}, Size = {180, 24} }
-  
-  table.insert(graphics, { Type = "Label", Text = "Art URL:", Position = {155, 260}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
-  layout["Album_Art_URL"] = { Style = "Text", Position = {210, 260}, Size = {180, 24} }
-  
-  -- Progress Bar (horizontal meter spanning full width)
-  layout["Progress_Ms"] = { Style = "Fader", Position = {10, 300}, Size = {380, 20} }
-  
-  -- Transport Section
-  table.insert(graphics, { Type = "GroupBox", Text = "Transport", Position = {0, 355}, Size = {400, 70}, Color = {40, 40, 40} })
-  layout["Previous"] = { Style = "Button", Legend = "|<<", Position = {10, 375}, Size = {40, 40},
-    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-  layout["Pause"] = { Style = "Button", Legend = "||", Position = {55, 375}, Size = {40, 40},
-    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-  layout["Play"] = { Style = "Button", Legend = ">", Position = {100, 375}, Size = {40, 40},
-    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-  layout["Next"] = { Style = "Button", Legend = ">>|", Position = {145, 375}, Size = {40, 40},
-    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-  
-  layout["Shuffle"] = { Style = "Button", Legend = "Shuffle", Position = {200, 385}, Size = {60, 24},
-    Color = {30, 215, 96}, OffColor = {70, 70, 70}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-  layout["Repeat"] = { Style = "Button", Legend = "Repeat", Position = {265, 385}, Size = {60, 24},
-    Color = {30, 215, 96}, OffColor = {70, 70, 70}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-  layout["Is_Playing"] = { Style = "Indicator", Position = {340, 387}, Size = {20, 20}, Color = {30, 215, 96}, OffColor = {70, 70, 70}, UnlinkOffColor = true }
-  layout["Repeat_State"] = { Style = "Text", Position = {340, 365}, Size = {50, 20} }
-  
-  -- Device Dropdown Section
-  table.insert(graphics, { Type = "GroupBox", Text = "Playback Device", Position = {0, 430}, Size = {400, 60}, Color = {40, 40, 40} })
-  table.insert(graphics, { Type = "Label", Text = "Device:", Position = {10, 450}, Size = {55, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
-  layout["Device_Select"] = { Style = "ComboBox", Position = {70, 450}, Size = {320, 24} }
-
-  -- Playlist Dropdown Section
-  table.insert(graphics, { Type = "GroupBox", Text = "Playlists", Position = {0, 500}, Size = {400, 70}, Color = {40, 40, 40} })
-  table.insert(graphics, { Type = "Label", Text = "Playlist:", Position = {10, 520}, Size = {55, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
-  layout["Playlist_Select"] = { Style = "ComboBox", Position = {70, 520}, Size = {220, 24} }
-  layout["Playlist_Play"] = { Style = "Button", Legend = "Play", Position = {295, 520}, Size = {50, 24},
-    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-  layout["Refresh_Playlists"] = { Style = "Button", Legend = "Refresh", Position = {350, 520}, Size = {40, 24} }
-
-  -- Search Section
-  local srch_y = 585
-  local row_h  = 60
-  table.insert(graphics, { Type = "GroupBox", Text = "Search", Position = {0, srch_y - 5}, Size = {400, 5 + 40 + (5 * row_h) + 15}, Color = {30, 30, 30} })
-
-  -- Search bar + button
-  layout["Search_Query"]   = { Style = "Text",   Position = {10, srch_y + 8},  Size = {295, 24} }
-  layout["Search_Execute"] = { Style = "Button", Legend = "Search", Position = {310, srch_y + 8}, Size = {80, 24},
-    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-
-  -- Result rows (5 slots)
-  for i = 1, 5 do
-    local ry = srch_y + 40 + ((i - 1) * row_h)
-    layout["Search_Result_Art "    .. i] = { Style = "Media",  Position = {10,  ry},      Size = {50, 50} }
-    layout["Search_Result_Name "   .. i] = { Style = "Text",   Position = {68,  ry},      Size = {260, 24} }
-    layout["Search_Result_Artist " .. i] = { Style = "Text",   Position = {68,  ry + 26}, Size = {180, 20} }
-    layout["Search_Result_Play "   .. i] = { Style = "Button", Legend = "Play", Position = {330, ry + 13}, Size = {60, 24},
+  if current_page == 1 then
+    -- ==== PAGE 1: NOW PLAYING ====
+    local y1 = 130
+    table.insert(graphics, { Type = "GroupBox", Text = "Now Playing", Position = {0, y1}, Size = {400, 220}, Color = {40, 40, 40} })
+    
+    -- Album Art Display
+    layout["Album_Art"] = { Style = "Media", Position = {10, y1 + 20}, Size = {140, 140} }
+    
+    -- Track metadata (right of art)
+    table.insert(graphics, { Type = "Label", Text = "Track:", Position = {155, y1 + 25}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+    layout["Track_Name"] = { Style = "Text", Position = {210, y1 + 25}, Size = {180, 24} }
+    
+    table.insert(graphics, { Type = "Label", Text = "Artist:", Position = {155, y1 + 50}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+    layout["Artist_Name"] = { Style = "Text", Position = {210, y1 + 50}, Size = {180, 24} }
+    
+    table.insert(graphics, { Type = "Label", Text = "Album:", Position = {155, y1 + 75}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+    layout["Album_Name"] = { Style = "Text", Position = {210, y1 + 75}, Size = {180, 24} }
+    
+    table.insert(graphics, { Type = "Label", Text = "Prog:", Position = {155, y1 + 105}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+    layout["Progress_Text"] = { Style = "Text", Position = {210, y1 + 105}, Size = {180, 24} }
+    
+    table.insert(graphics, { Type = "Label", Text = "Art URL:", Position = {155, y1 + 130}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+    layout["Album_Art_URL"] = { Style = "Text", Position = {210, y1 + 130}, Size = {180, 24} }
+    
+    -- Progress Bar (horizontal meter spanning full width)
+    layout["Progress_Ms"] = { Style = "Fader", Position = {10, y1 + 170}, Size = {380, 20} }
+    
+    -- Transport Section
+    local y1_t = y1 + 225
+    table.insert(graphics, { Type = "GroupBox", Text = "Transport", Position = {0, y1_t}, Size = {400, 70}, Color = {40, 40, 40} })
+    layout["Previous"] = { Style = "Button", Legend = "|<<", Position = {10, y1_t + 20}, Size = {40, 40},
       Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    layout["Pause"] = { Style = "Button", Legend = "||", Position = {55, y1_t + 20}, Size = {40, 40},
+      Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    layout["Play"] = { Style = "Button", Legend = ">", Position = {100, y1_t + 20}, Size = {40, 40},
+      Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    layout["Next"] = { Style = "Button", Legend = ">>|", Position = {145, y1_t + 20}, Size = {40, 40},
+      Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    
+    layout["Shuffle"] = { Style = "Button", Legend = "Shuffle", Position = {200, y1_t + 30}, Size = {60, 24},
+      Color = {30, 215, 96}, OffColor = {70, 70, 70}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    layout["Repeat"] = { Style = "Button", Legend = "Repeat", Position = {265, y1_t + 30}, Size = {60, 24},
+      Color = {30, 215, 96}, OffColor = {70, 70, 70}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    layout["Is_Playing"] = { Style = "Indicator", Position = {340, y1_t + 32}, Size = {20, 20}, Color = {30, 215, 96}, OffColor = {70, 70, 70}, UnlinkOffColor = true }
+    layout["Repeat_State"] = { Style = "Text", Position = {340, y1_t + 10}, Size = {50, 20} }
+    
+    -- Device Dropdown Section
+    local y1_d = y1_t + 75
+    table.insert(graphics, { Type = "GroupBox", Text = "Playback Device", Position = {0, y1_d}, Size = {400, 60}, Color = {40, 40, 40} })
+    table.insert(graphics, { Type = "Label", Text = "Device:", Position = {10, y1_d + 20}, Size = {55, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+    layout["Device_Select"] = { Style = "ComboBox", Position = {70, y1_d + 20}, Size = {320, 24} }
+  
+    -- Playlist Dropdown Section
+    local y1_p = y1_d + 70
+    table.insert(graphics, { Type = "GroupBox", Text = "Playlists", Position = {0, y1_p}, Size = {400, 70}, Color = {40, 40, 40} })
+    table.insert(graphics, { Type = "Label", Text = "Playlist:", Position = {10, y1_p + 20}, Size = {55, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+    layout["Playlist_Select"] = { Style = "ComboBox", Position = {70, y1_p + 20}, Size = {220, 24} }
+    layout["Playlist_Play"] = { Style = "Button", Legend = "Play", Position = {295, y1_p + 20}, Size = {50, 24},
+      Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    layout["Refresh_Playlists"] = { Style = "Button", Legend = "Refresh", Position = {350, y1_p + 20}, Size = {40, 24} }
+  
+  elseif current_page == 2 then
+    -- ==== PAGE 2: SEARCH ====
+    local srch_y = 130
+    local row_h  = 60
+    table.insert(graphics, { Type = "GroupBox", Text = "Search", Position = {0, srch_y - 5}, Size = {400, 5 + 40 + (5 * row_h) + 15}, Color = {30, 30, 30} })
+  
+    -- Search bar + button
+    layout["Search_Query"]   = { Style = "Text",   Position = {10, srch_y + 8},  Size = {185, 24} }
+    layout["Search_Execute"] = { Style = "Button", Legend = "Search", Position = {200, srch_y + 8}, Size = {60, 24},
+      Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    layout["Search_Prev"] = { Style = "Button", Legend = "<", Position = {265, srch_y + 8}, Size = {60, 24},
+      Color = {40, 40, 40}, OffColor = {20, 20, 20}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    layout["Search_Next"] = { Style = "Button", Legend = ">", Position = {330, srch_y + 8}, Size = {60, 24},
+      Color = {40, 40, 40}, OffColor = {20, 20, 20}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+  
+    -- Result rows (5 slots)
+    for i = 1, 5 do
+      local ry = srch_y + 40 + ((i - 1) * row_h)
+      layout["Search_Result_Art "    .. i] = { Style = "Media",  Position = {10,  ry},      Size = {50, 50} }
+      layout["Search_Result_Name "   .. i] = { Style = "Text",   Position = {68,  ry},      Size = {260, 24} }
+      layout["Search_Result_Artist " .. i] = { Style = "Text",   Position = {68,  ry + 26}, Size = {180, 20} }
+      layout["Search_Result_Play "   .. i] = { Style = "Button", Legend = "Play", Position = {330, ry + 13}, Size = {60, 24},
+        Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    end
   end
 
   return layout, graphics
@@ -837,6 +858,7 @@ if Controls then
   -- Search Logic
   -- ==========================================
   local search_uris = {}
+  local search_offset = 0
 
   local function clear_search_results()
     for i = 1, 5 do
@@ -853,7 +875,7 @@ if Controls then
     if not query or query == "" then return end
     local encoded = query:gsub(" ", "%%20"):gsub("&", "%%26"):gsub("=", "%%3D")
     clear_search_results()
-    spotify_api("GET", "/search?q=" .. encoded .. "&type=track&limit=5", nil, function(code, data)
+    spotify_api("GET", "/search?q=" .. encoded .. "&type=track&limit=5&offset=" .. search_offset, nil, function(code, data)
       if code == 200 and data then
         local result = rapidjson.decode(data)
         if result and type(result.tracks) == "table" and type(result.tracks.items) == "table" then
@@ -875,7 +897,7 @@ if Controls then
               end
             end
           end
-          print("[Spotify] Search: " .. #result.tracks.items .. " result(s) for '" .. query .. "'")
+          print("[Spotify] Search: Showing results " .. (search_offset + 1) .. "-" .. (search_offset + #result.tracks.items) .. " for '" .. query .. "'")
         end
       else
         print("[Spotify] Search failed. Code: " .. tostring(code))
@@ -883,8 +905,25 @@ if Controls then
     end)
   end
 
-  Controls.Search_Execute.EventHandler = function() do_search() end
-  Controls.Search_Query.EventHandler   = function() do_search() end
+  Controls.Search_Execute.EventHandler = function()
+    search_offset = 0
+    do_search()
+  end
+  
+  Controls.Search_Query.EventHandler = function()
+    search_offset = 0
+    do_search()
+  end
+  
+  Controls.Search_Next.EventHandler = function()
+    search_offset = search_offset + 5
+    do_search()
+  end
+
+  Controls.Search_Prev.EventHandler = function()
+    search_offset = math.max(0, search_offset - 5)
+    do_search()
+  end
 
   for i = 1, 5 do
     Controls.Search_Result_Play[i].EventHandler = function()
