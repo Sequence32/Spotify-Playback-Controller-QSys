@@ -116,7 +116,7 @@ function GetControlLayout(props)
   layout["Album_Art_URL"] = { Style = "Text", Position = {210, 260}, Size = {180, 24} }
   
   -- Progress Bar (horizontal meter spanning full width)
-  layout["Progress_Ms"] = { Style = "Knob", Position = {10, 300}, Size = {380, 16} }
+  layout["Progress_Ms"] = { Style = "Fader", Position = {10, 300}, Size = {380, 20} }
   
   -- Transport Section
   table.insert(graphics, { Type = "GroupBox", Text = "Transport", Position = {0, 355}, Size = {400, 70}, Color = {40, 40, 40} })
