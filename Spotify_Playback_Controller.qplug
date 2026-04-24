@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller with Art",
-  Version = "1.4.5.003",
+  Version = "1.4.5.004",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -729,6 +729,7 @@ if Controls then
   -- ==========================================
   local playlist_uris = {} -- name -> uri map
   local playlist_names = {}
+  local is_updating_playlists = false
 
   fetch_playlists = function()
     spotify_api("GET", "/me/playlists?limit=50", nil, function(code, data)
@@ -742,10 +743,12 @@ if Controls then
             playlist_uris[name] = pl.uri or ""
             table.insert(playlist_names, name)
           end
+          is_updating_playlists = true
           Controls.Playlist_Select.Choices = playlist_names
           if #playlist_names > 0 then
             Controls.Playlist_Select.String = playlist_names[1]
           end
+          is_updating_playlists = false
           print("[Spotify] Loaded " .. #playlist_names .. " playlists.")
         end
       else
@@ -758,7 +761,8 @@ if Controls then
     fetch_playlists()
   end
 
-  Controls.Playlist_Play.EventHandler = function()
+  local function play_selected_playlist()
+    if is_updating_playlists then return end
     local selected = Controls.Playlist_Select.String
     local uri = playlist_uris[selected]
     if uri and uri ~= "" then
@@ -777,6 +781,9 @@ if Controls then
       print("[Spotify] No playlist selected or URI not found.")
     end
   end
+
+  Controls.Playlist_Play.EventHandler = play_selected_playlist
+  Controls.Playlist_Select.EventHandler = play_selected_playlist
 
   -- ==========================================
   -- Device Dropdown Logic (auto-refresh every 30s)
