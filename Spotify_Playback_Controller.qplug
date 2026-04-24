@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller with Art",
-  Version = "1.4.4.3",
+  Version = "1.4.5.0",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -46,7 +46,7 @@ function GetControls()
     { Name = "Album_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Album_Art_URL", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Album_Art", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
-    { Name = "Progress_Ms", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "Progress_Ms", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Both", UserPin = true },
     { Name = "Progress_Text", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Duration_Ms", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     
@@ -688,6 +688,18 @@ if Controls then
     if dur > 0 then
       local pos_ms = math.floor(ctrl.Position * dur)
       spotify_api("PUT", "/me/player/seek?position_ms=" .. pos_ms)
+    end
+  end
+
+  -- Progress bar is also draggable for seeking
+  Controls.Progress_Ms.EventHandler = function(ctrl)
+    if is_polling_update then return end -- ignore programmatic updates
+    local dur = tonumber(Controls.Duration_Ms.String) or 0
+    if dur > 0 then
+      local pos_ms = math.floor(ctrl.Position * dur)
+      spotify_api("PUT", "/me/player/seek?position_ms=" .. pos_ms, nil, function()
+        Timer.CallAfter(poll_now_playing, 0.5)
+      end)
     end
   end
   
