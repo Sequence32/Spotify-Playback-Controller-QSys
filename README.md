@@ -279,4 +279,4 @@ The plugin features a Spotify-themed dark interface with the following sections:
 
 ## Author
 
-**Dustin Bennett** — [TEL Systems](https://telsystems.com)
+**Dustin Bennett**
