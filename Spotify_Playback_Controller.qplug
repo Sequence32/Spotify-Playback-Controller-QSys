@@ -1,7 +1,7 @@
 -- Plugin Info
 PluginInfo = {
-  Name = "Spotify Playback Controller",
-  Version = "1.1.8",
+  Name = "Spotify Playback Controller with Art",
+  Version = "1.3.2",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
@@ -45,6 +45,7 @@ function GetControls()
     { Name = "Artist_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Album_Name", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Album_Art_URL", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "Album_Art", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Progress_Ms", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Progress_Text", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
     { Name = "Duration_Ms", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
@@ -78,8 +79,10 @@ function GetControlLayout(props)
   
   -- Auth Section
   table.insert(graphics, { Type = "GroupBox", Text = "Authentication", Position = {0, 25}, Size = {400, 100} })
-  layout["Authorize"] = { Style = "Button", Legend = "Authorize", Position = {10, 45}, Size = {80, 24} }
-  layout["Logout"] = { Style = "Button", Legend = "Logout", Position = {95, 45}, Size = {80, 24} }
+  layout["Authorize"] = { Style = "Button", Legend = "Authorize", Position = {10, 45}, Size = {80, 24},
+    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+  layout["Logout"] = { Style = "Button", Legend = "Logout", Position = {95, 45}, Size = {80, 24},
+    Color = {200, 50, 50}, OffColor = {70, 70, 70}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
   layout["Auth_Status"] = { Style = "Indicator", Position = {180, 47}, Size = {20, 20} }
   table.insert(graphics, { Type = "Label", Text = "User:", Position = {210, 45}, Size = {40, 24}, HTextAlign = "Right" })
   layout["User_Name"] = { Style = "Text", Position = {255, 45}, Size = {135, 24} }
@@ -90,59 +93,75 @@ function GetControlLayout(props)
   table.insert(graphics, { Type = "Label", Text = "Manual Code:", Position = {10, 100}, Size = {70, 24}, HTextAlign = "Right" })
   layout["Auth_Code_Input"] = { Style = "Text", Position = {85, 100}, Size = {305, 24} }
   
-  -- Now Playing Section
-  table.insert(graphics, { Type = "GroupBox", Text = "Now Playing", Position = {0, 130}, Size = {400, 140} })
-  table.insert(graphics, { Type = "Label", Text = "Track:", Position = {10, 150}, Size = {60, 24}, HTextAlign = "Right" })
-  layout["Track_Name"] = { Style = "Text", Position = {75, 150}, Size = {315, 24} }
+  -- Now Playing Section (with Album Art)
+  table.insert(graphics, { Type = "GroupBox", Text = "Now Playing", Position = {0, 130}, Size = {400, 220}, Color = {40, 40, 40} })
   
-  table.insert(graphics, { Type = "Label", Text = "Artist:", Position = {10, 175}, Size = {60, 24}, HTextAlign = "Right" })
-  layout["Artist_Name"] = { Style = "Text", Position = {75, 175}, Size = {315, 24} }
+  -- Album Art Display
+  layout["Album_Art"] = { Style = "Media", Position = {10, 150}, Size = {140, 140} }
   
-  table.insert(graphics, { Type = "Label", Text = "Album:", Position = {10, 200}, Size = {60, 24}, HTextAlign = "Right" })
-  layout["Album_Name"] = { Style = "Text", Position = {75, 200}, Size = {315, 24} }
+  -- Track metadata (right of art)
+  table.insert(graphics, { Type = "Label", Text = "Track:", Position = {155, 155}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+  layout["Track_Name"] = { Style = "Text", Position = {210, 155}, Size = {180, 24} }
   
-  table.insert(graphics, { Type = "Label", Text = "Art URL:", Position = {10, 225}, Size = {60, 24}, HTextAlign = "Right" })
-  layout["Album_Art_URL"] = { Style = "Text", Position = {75, 225}, Size = {150, 24} }
+  table.insert(graphics, { Type = "Label", Text = "Artist:", Position = {155, 180}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+  layout["Artist_Name"] = { Style = "Text", Position = {210, 180}, Size = {180, 24} }
   
-  table.insert(graphics, { Type = "Label", Text = "Prog:", Position = {230, 225}, Size = {40, 24}, HTextAlign = "Right" })
-  layout["Progress_Text"] = { Style = "Text", Position = {275, 225}, Size = {115, 24} }
+  table.insert(graphics, { Type = "Label", Text = "Album:", Position = {155, 205}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+  layout["Album_Name"] = { Style = "Text", Position = {210, 205}, Size = {180, 24} }
+  
+  table.insert(graphics, { Type = "Label", Text = "Prog:", Position = {155, 235}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+  layout["Progress_Text"] = { Style = "Text", Position = {210, 235}, Size = {180, 24} }
+  
+  table.insert(graphics, { Type = "Label", Text = "Art URL:", Position = {155, 260}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+  layout["Album_Art_URL"] = { Style = "Text", Position = {210, 260}, Size = {180, 24} }
+  
+  -- Progress Bar (horizontal meter spanning full width)
+  layout["Progress_Ms"] = { Style = "Meter", Position = {10, 300}, Size = {380, 16}, Color = {30, 215, 96} }
   
   -- Transport Section
-  table.insert(graphics, { Type = "GroupBox", Text = "Transport", Position = {0, 275}, Size = {400, 70} })
-  layout["Previous"] = { Style = "Button", Legend = "|<", Position = {10, 295}, Size = {40, 40} }
-  layout["Pause"] = { Style = "Button", Legend = "||", Position = {55, 295}, Size = {40, 40} }
-  layout["Play"] = { Style = "Button", Legend = ">", Position = {100, 295}, Size = {40, 40} }
-  layout["Next"] = { Style = "Button", Legend = ">|", Position = {145, 295}, Size = {40, 40} }
+  table.insert(graphics, { Type = "GroupBox", Text = "Transport", Position = {0, 355}, Size = {400, 70}, Color = {40, 40, 40} })
+  layout["Previous"] = { Style = "Button", Legend = "|<<", Position = {10, 375}, Size = {40, 40},
+    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+  layout["Pause"] = { Style = "Button", Legend = "||", Position = {55, 375}, Size = {40, 40},
+    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+  layout["Play"] = { Style = "Button", Legend = ">", Position = {100, 375}, Size = {40, 40},
+    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+  layout["Next"] = { Style = "Button", Legend = ">>|", Position = {145, 375}, Size = {40, 40},
+    Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
   
-  layout["Shuffle"] = { Style = "Button", Legend = "Shuffle", Position = {200, 305}, Size = {60, 24} }
-  layout["Repeat"] = { Style = "Button", Legend = "Repeat", Position = {265, 305}, Size = {60, 24} }
-  layout["Is_Playing"] = { Style = "Indicator", Position = {340, 307}, Size = {20, 20} }
-  layout["Repeat_State"] = { Style = "Text", Position = {340, 285}, Size = {50, 20} }
+  layout["Shuffle"] = { Style = "Button", Legend = "Shuffle", Position = {200, 385}, Size = {60, 24},
+    Color = {30, 215, 96}, OffColor = {70, 70, 70}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+  layout["Repeat"] = { Style = "Button", Legend = "Repeat", Position = {265, 385}, Size = {60, 24},
+    Color = {30, 215, 96}, OffColor = {70, 70, 70}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+  layout["Is_Playing"] = { Style = "Indicator", Position = {340, 387}, Size = {20, 20}, Color = {30, 215, 96}, OffColor = {70, 70, 70}, UnlinkOffColor = true }
+  layout["Repeat_State"] = { Style = "Text", Position = {340, 365}, Size = {50, 20} }
   
   -- Device Section
-  table.insert(graphics, { Type = "GroupBox", Text = "Active Device", Position = {0, 350}, Size = {400, 60} })
+  table.insert(graphics, { Type = "GroupBox", Text = "Active Device", Position = {0, 430}, Size = {400, 60}, Color = {40, 40, 40} })
   
-  table.insert(graphics, { Type = "Label", Text = "Device:", Position = {10, 370}, Size = {50, 24}, HTextAlign = "Right" })
-  layout["Active_Device"] = { Style = "Text", Position = {65, 370}, Size = {125, 24} }
+  table.insert(graphics, { Type = "Label", Text = "Device:", Position = {10, 450}, Size = {50, 24}, HTextAlign = "Right", Color = {179, 179, 179} })
+  layout["Active_Device"] = { Style = "Text", Position = {65, 450}, Size = {125, 24} }
   -- Playlist Section
-  local pl_y = 420
+  local pl_y = 500
   table.insert(graphics, { Type = "GroupBox", Text = "Playlists", Position = {0, pl_y - 5}, Size = {400, 290} })
   layout["Refresh_Playlists"] = { Style = "Button", Legend = "Refresh", Position = {10, pl_y + 10}, Size = {80, 24} }
   for i = 1, 10 do
     local row_y = pl_y + 10 + (i * 26)
     layout["Playlist_Name " .. i] = { Style = "Text", Position = {10, row_y}, Size = {310, 24} }
-    layout["Playlist_Play " .. i] = { Style = "Button", Legend = "Play", Position = {325, row_y}, Size = {65, 24} }
+    layout["Playlist_Play " .. i] = { Style = "Button", Legend = "Play", Position = {325, row_y}, Size = {65, 24},
+      Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
   end
 
   -- Device Selection Section
-  local dev_y = 720
+  local dev_y = 800
   table.insert(graphics, { Type = "GroupBox", Text = "Devices", Position = {0, dev_y - 5}, Size = {400, 170} })
   layout["Refresh_Devices"] = { Style = "Button", Legend = "Refresh", Position = {10, dev_y + 10}, Size = {80, 24} }
   for i = 1, 5 do
     local row_y = dev_y + 10 + (i * 26)
     layout["Device_Name " .. i] = { Style = "Text", Position = {10, row_y}, Size = {230, 24} }
     layout["Device_Type " .. i] = { Style = "Text", Position = {245, row_y}, Size = {80, 24} }
-    layout["Device_Select " .. i] = { Style = "Button", Legend = "Select", Position = {330, row_y}, Size = {60, 24} }
+    layout["Device_Select " .. i] = { Style = "Button", Legend = "Select", Position = {330, row_y}, Size = {60, 24},
+      Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
   end
 
   return layout, graphics
@@ -343,6 +362,13 @@ if Controls then
           end
           Controls.Album_Art_URL.String = art_url
           
+          -- Update Album Art media display
+          if art_url ~= "" then
+            Controls.Album_Art.String = '{"Protocol":"Image","URLs":["' .. art_url .. '"]}'
+          else
+            Controls.Album_Art.String = ""
+          end
+          
           local prog = state.progress_ms or 0
           local dur  = state.item.duration_ms or 1
           Controls.Progress_Ms.Position = prog / dur
@@ -369,6 +395,7 @@ if Controls then
         Controls.Artist_Name.String = ""
         Controls.Album_Name.String = ""
         Controls.Album_Art_URL.String = ""
+        Controls.Album_Art.String = ""
         Controls.Progress_Ms.Position = 0
         Controls.Progress_Text.String = "0:00 / 0:00"
         Controls.Is_Playing.Boolean = false
@@ -560,6 +587,7 @@ if Controls then
     Controls.Artist_Name.String = ""
     Controls.Album_Name.String = ""
     Controls.Album_Art_URL.String = ""
+    Controls.Album_Art.String = ""
     Controls.Progress_Ms.Position = 0
     Controls.Progress_Text.String = ""
     Controls.Duration_Ms.String = ""
