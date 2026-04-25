@@ -75,7 +75,10 @@ function GetControls()
     { Name = "Search_Result_Play", ControlType = "Button", ButtonType = "Trigger", Count = 5, PinStyle = "Input", UserPin = true },
     { Name = "Search_Prev", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     { Name = "Search_Next", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
-    { Name = "Search_Suggestions", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true, Choices = {} }
+    { Name = "Search_Suggestions", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true, Choices = {} },
+    
+    -- Persistent Auth (hidden)
+    { Name = "Saved_Refresh_Token", ControlType = "Text", Count = 1, PinStyle = "None", UserPin = false }
   }
 end
 
@@ -254,6 +257,60 @@ if Controls then
   end
 
   -- ==========================================
+  -- Token Persistence (dual: file + control)
+  -- ==========================================
+  local TOKEN_FILE = "/tmp/spotify_refresh_token.txt"
+
+  local function save_refresh_token(token)
+    -- Always save to control
+    Controls.Saved_Refresh_Token.String = token or ""
+    -- Try file write (works on Core hardware, may fail in emulator)
+    local ok, err = pcall(function()
+      local f = io.open(TOKEN_FILE, "w")
+      if f then
+        f:write(token or "")
+        f:close()
+        print("[Spotify] Refresh token saved to file.")
+      end
+    end)
+    if not ok then
+      print("[Spotify] File write unavailable (emulator?), saved to control only.")
+    end
+  end
+
+  local function load_refresh_token()
+    -- Try file first (most reliable on Core)
+    local ok, result = pcall(function()
+      local f = io.open(TOKEN_FILE, "r")
+      if f then
+        local token = f:read("*a")
+        f:close()
+        if token and token ~= "" then
+          print("[Spotify] Refresh token loaded from file.")
+          return token
+        end
+      end
+      return nil
+    end)
+    if ok and result then return result end
+    -- Fall back to control
+    local ctrl_token = Controls.Saved_Refresh_Token.String
+    if ctrl_token and ctrl_token ~= "" then
+      print("[Spotify] Refresh token loaded from control.")
+      return ctrl_token
+    end
+    return nil
+  end
+
+  local function clear_refresh_token()
+    Controls.Saved_Refresh_Token.String = ""
+    pcall(function()
+      local f = io.open(TOKEN_FILE, "w")
+      if f then f:write("") f:close() end
+    end)
+  end
+
+  -- ==========================================
   -- PKCE & Auth Generation
   -- ==========================================
   local function generate_code_verifier()
@@ -295,7 +352,7 @@ if Controls then
     Timer.CallAfter(refresh_access_token, delay)
   end
 
-  refresh_access_token = function()
+  refresh_access_token = function(on_success)
     if not refresh_token then return end
     
     local body = "client_id=" .. CLIENT_ID
@@ -311,10 +368,14 @@ if Controls then
         if http_code == 200 then
           local json = rapidjson.decode(data)
           access_token = json.access_token
-          if json.refresh_token then refresh_token = json.refresh_token end
+          if json.refresh_token then
+            refresh_token = json.refresh_token
+            save_refresh_token(refresh_token)
+          end
           token_expiry = os.time() + (json.expires_in or 3600)
           schedule_token_refresh()
           print("[Spotify] Token refreshed successfully.")
+          if on_success then on_success() end
         else
           update_auth_status(2)
           print("[Spotify] Failed to refresh token: " .. tostring(err))
@@ -480,6 +541,7 @@ if Controls then
           local json = rapidjson.decode(data)
           access_token = json.access_token
           refresh_token = json.refresh_token
+          save_refresh_token(refresh_token) -- Persist for auto-reconnect
           token_expiry = os.time() + (json.expires_in or 3600)
           schedule_token_refresh() -- Schedule auto-refresh before expiry
           start_polling()
@@ -656,6 +718,7 @@ if Controls then
   Controls.Logout.EventHandler = function()
     access_token = nil
     refresh_token = nil
+    clear_refresh_token() -- Wipe saved token from file + control
     poll_timer:Stop()
     if auth_server then auth_server:Close() auth_server = nil end
     update_auth_status(2) -- Red
@@ -1016,7 +1079,31 @@ if Controls then
     end
   end
 
-  -- Initialize
-  update_auth_status(2) -- Start as logged out
-  print("[Spotify] Plugin initialized. Set Client ID in properties and press Authorize.")
+  -- Initialize: attempt auto-reconnect from saved refresh token
+  local saved_token = load_refresh_token()
+  if CLIENT_ID ~= "" and saved_token and saved_token ~= "" then
+    print("[Spotify] Found saved refresh token. Attempting auto-reconnect...")
+    update_auth_status(3) -- Yellow while attempting
+    refresh_token = saved_token
+    
+    -- Determine IP for REDIRECT_URI
+    local ip = Properties["Core IP Address"].Value
+    if ip == "" then
+      local interfaces = Network.Interfaces()
+      if interfaces and interfaces[1] then ip = interfaces[1].Address end
+    end
+    if ip then
+      REDIRECT_URI = "http://" .. ip .. ":" .. tostring(REDIRECT_PORT) .. "/callback"
+    end
+    
+    refresh_access_token(function()
+      start_polling()
+      fetch_user_profile()
+      Timer.CallAfter(fetch_playlists, 2)
+      print("[Spotify] Auto-reconnect successful!")
+    end)
+  else
+    update_auth_status(2) -- Start as logged out
+    print("[Spotify] Plugin initialized. Set Client ID in properties and press Authorize.")
+  end
 end
