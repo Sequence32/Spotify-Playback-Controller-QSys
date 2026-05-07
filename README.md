@@ -51,12 +51,10 @@ A professional Q-SYS plugin that provides full Spotify playback control through 
 4. Fill in:
    - **App Name**: anything (e.g., `Q-SYS Controller`)
    - **App Description**: anything
-   - **Redirect URI**: `http://<core-ip>:9091/callback` (e.g., `http://192.168.1.6:9091/callback`)
+   - **Redirect URI**: `http://127.0.0.1:9091/callback
    - **APIs Used**: check **Web API**
 5. Click **Save**
 6. Copy the **Client ID** from the app overview page
-
-> **Important:** The redirect URI must match the Core's IP address. For emulation/development, use `http://127.0.0.1:9091/callback` or `http://localhost:9091/callback`. For a deployed Core on the LAN, add `http://<core-ip>:9091/callback` as a redirect URI in the Spotify Dashboard. You can add multiple redirect URIs.
 
 ### Step 2 — Install the Plugin in Q-SYS Designer
 
@@ -81,8 +79,8 @@ In the plugin's **Properties** panel, set:
 
 1. Save/Emulate your design so the plugin is running
 2. Press the **Authorize** button on the plugin block
-3. The **Auth URL** field will show an address like `http://192.168.1.6:9091`
-4. Open that address in any web browser on the same machine
+3. The **Auth URL** field will show an address like `http://127.0.0.1:9091`
+4. Open the core address in any web browser `[http://192.168.1.*:9091]`
 5. Click the green **"Step 1: Log in with Spotify"** button
 6. Log in to Spotify and approve the permissions
 7. You'll see a "Spotify Authorized!" confirmation page — done!
