@@ -69,7 +69,7 @@ In the plugin's **Properties** panel, set:
 | Property | Value | Notes |
 |----------|-------|-------|
 | **Client ID** | `your-spotify-client-id` | From the Spotify Developer Dashboard |
-| **Core IP Address** | set to 127.0.0.1
+| **Core IP Address** |  `127.0.0.1` | set to loopback
 | **Redirect Port** | `9091` | Must match the port in your Spotify redirect URI |
 | **Poll Interval (s)** | `3` | How often to poll for now-playing updates (1-10 seconds) |
 
