@@ -4,7 +4,7 @@ A professional Q-SYS plugin that provides full Spotify playback control through 
 
 ![Q-SYS](https://img.shields.io/badge/Q--SYS-Plugin-blue)
 ![Spotify](https://img.shields.io/badge/Spotify-Web%20API-1DB954)
-![Version](https://img.shields.io/badge/Version-1.4.5-orange)
+![Version](https://img.shields.io/badge/Version-1.5.0-orange)
 
 > **🚧 Active Development** — This plugin is under active development as of April 2026. Features, controls, and authentication flows may change between versions. Feedback and contributions are welcome!
 
@@ -27,8 +27,9 @@ A professional Q-SYS plugin that provides full Spotify playback control through 
 - **Now Playing** — Track name, artist, album, progress text, and duration
 - **Playlist Browsing** — Dropdown menu of your top playlists with auto-play on selection
 - **Device Selection** — Dropdown menu to switch between Spotify Connect devices, featuring 30-second auto-refresh and unique ID tags for duplicate names
-- **Song Search & Autocomplete** — Dedicated tab to search the Spotify catalog, featuring live dropdown suggestions, pagination, and one-click playback
+- **Scrolling Search List** — Search-as-you-type across tracks, albums, artists, and playlists in one list with art, scrolled by a fader, up/down buttons, or page buttons. Results are cached on the Core so scrolling is instant
 - **Auto Token Refresh** — Tokens refresh automatically before expiry
+- **Persistent Login** — The refresh token is saved on the Core so the plugin reconnects by itself after a reboot or redeploy
 - **Full URL Paste** — Paste an entire redirect URL when manually entering auth codes; the plugin auto-extracts the code
 
 ---
@@ -51,12 +52,12 @@ A professional Q-SYS plugin that provides full Spotify playback control through 
 4. Fill in:
    - **App Name**: anything (e.g., `Q-SYS Controller`)
    - **App Description**: anything
-   - **Redirect URI**: `http://<core-ip>:9091/callback` (e.g., `http://192.168.1.6:9091/callback`)
+   - **Redirect URI**: `http://127.0.0.1:9091/callback`
    - **APIs Used**: check **Web API**
 5. Click **Save**
 6. Copy the **Client ID** from the app overview page
 
-> **Important:** The redirect URI must match the Core's IP address. For emulation/development, use `http://127.0.0.1:9091/callback` or `http://localhost:9091/callback`. For a deployed Core on the LAN, add `http://<core-ip>:9091/callback` as a redirect URI in the Spotify Dashboard. You can add multiple redirect URIs.
+> **Why loopback?** Spotify only accepts plain-HTTP redirect URIs on the loopback address (`127.0.0.1`). A LAN address like `http://192.168.1.6:9091/callback` is rejected by the dashboard. The plugin sends the loopback address to Spotify and separately shows the Core's real LAN address in the **Auth URL** field, which is what the client types into their phone. If you change the port, change it in both the dashboard and the **Redirect Port** property.
 
 ### Step 2 — Install the Plugin in Q-SYS Designer
 
@@ -71,9 +72,11 @@ In the plugin's **Properties** panel, set:
 | Property | Value | Notes |
 |----------|-------|-------|
 | **Client ID** | `your-spotify-client-id` | From the Spotify Developer Dashboard |
-| **Core IP Address** | *(leave blank or set IP)* | Leave blank to auto-detect, or set the Core's LAN IP when deployed |
+| **Core IP Address** | *(leave blank)* | The address shown in **Auth URL**. Leave blank to auto-detect the Core's LAN A address, or set it if the Core has several interfaces. A loopback value here is ignored for display |
+| **Redirect Host** | `127.0.0.1` | The host sent to Spotify in the redirect URI. Leave at loopback unless you have registered an HTTPS redirect |
 | **Redirect Port** | `9091` | Must match the port in your Spotify redirect URI |
 | **Poll Interval (s)** | `3` | How often to poll for now-playing updates (1-10 seconds) |
+| **Search Rows** | `8` | How many search result rows the plugin exposes (5 to 15). Changing this re-creates the search controls |
 
 ### Step 4 — Authorize
 
@@ -81,27 +84,26 @@ In the plugin's **Properties** panel, set:
 
 1. Save/Emulate your design so the plugin is running
 2. Press the **Authorize** button on the plugin block
-3. The **Auth URL** field will show an address like `http://192.168.1.6:9091`
-4. Open that address in any web browser on the same machine
-5. Click the green **"Step 1: Log in with Spotify"** button
-6. Log in to Spotify and approve the permissions
-7. You'll see a "Spotify Authorized!" confirmation page — done!
+3. Open `http://127.0.0.1:9091` in a browser on the same machine
+4. Click the green **"Step 1: Log in with Spotify"** button
+5. Log in to Spotify and approve the permissions
+6. Spotify redirects to the loopback address, the plugin catches it, and you'll see "Spotify Authorized!" — done!
 
 #### From a phone or another device (deployed Core)
 
 1. Press the **Authorize** button on the plugin
-2. On your phone or tablet, open a browser and navigate to the **Auth URL** shown in the plugin (e.g., `http://192.168.1.6:9091`)
-3. Tap **"Step 1: Log in with Spotify"** — this opens Spotify auth in a new tab
-4. Log in and approve permissions
-5. If the redirect is caught automatically, you're done!
-6. If you see an error page after authorizing:
-   - **Copy the entire URL** from the browser address bar
+2. The **Auth URL** field shows the Core's LAN address, e.g. `http://192.168.1.6:9091`. Give this to the client
+3. On the phone, open a browser and go to that address
+4. Tap **"Step 1: Log in with Spotify"** — this opens Spotify auth in a new tab
+5. Log in and approve permissions
+6. Spotify sends the phone to `127.0.0.1`, which the phone can't reach, so the page won't load. **This is expected.**
+   - **Copy the entire URL** from that tab's address bar
    - Go back to the landing page tab
    - **Paste the full URL** into the input field under "Step 2"
    - Tap **Submit Code**
 7. You can also paste the full URL directly into the **Manual Code** field in the Q-SYS plugin
 
-> **Tip:** You only need to authorize once. The plugin automatically refreshes the token before it expires. Re-authorization is only needed after a Core reboot or explicit logout.
+> **Tip:** You only need to authorize once. The plugin refreshes the token before it expires and saves the refresh token on the Core, so it reconnects by itself after a reboot. Re-authorization is only needed after an explicit logout or if Spotify revokes the token.
 
 ---
 
@@ -159,14 +161,25 @@ In the plugin's **Properties** panel, set:
 ### Search
 | Control | Type | Description |
 |---------|------|-------------|
-| `Search_Query` | Text (input) | Text box to enter search queries |
-| `Search_Suggestions` | ListBox (output) | Autocomplete dropdown showing top artist and track matches |
-| `Search_Execute` | Trigger | Manually execute a full search |
-| `Search_Prev` / `Search_Next` | Trigger | Navigate through pages of search results |
-| `Search_Result_Art 1-5` | Media (output) | Album art for search results |
-| `Search_Result_Name 1-5` | Text (output) | Track names from search |
-| `Search_Result_Artist 1-5` | Text (output) | Artist names from search |
-| `Search_Result_Play 1-5` | Trigger | Instantly start playing the selected search result |
+Results are fetched once per query (10 tracks, 10 albums, 10 artists, 10 playlists) and cached on the Core. The `Search_Result_* 1-N` controls are a window into that cache; every scroll control just moves the window. N is the **Search Rows** property.
+
+| Control | Type | Description |
+|---------|------|-------------|
+| `Search_Query` | Text (input) | Type to search. A search runs half a second after typing stops |
+| `Search_Execute` | Trigger | Run the search immediately (bind to a keyboard "Go" if needed) |
+| `Search_Clear` | Trigger | Empty the query and the result list |
+| `Search_Count` | Text (output) | `1-8 of 39`, `No results`, `Not signed in`, or blank |
+| `Search_Scroll` | Knob 0-100% (both) | Scrollbar. 0% is the top of the list, 100% the bottom. Bind to a vertical fader on a UCI |
+| `Search_Up` / `Search_Down` | Trigger | Scroll by one row |
+| `Search_Prev` / `Search_Next` | Trigger | Scroll by one page (N rows) |
+| `Search_Result_Art 1-N` | Media (output) | Art for the row (album cover, artist photo, or playlist cover) |
+| `Search_Result_Name 1-N` | Text (output) | Title of the row |
+| `Search_Result_Artist 1-N` | Text (output) | Subtitle: artists for tracks and albums, follower count for artists, owner for playlists |
+| `Search_Result_Album 1-N` | Text (output) | Extra line: album name for tracks, release year for albums, track count for playlists |
+| `Search_Result_Type 1-N` | Text (output) | `Track`, `Album`, `Artist`, or `Playlist` |
+| `Search_Result_Play 1-N` | Trigger | Play the row. Tracks play the single track; albums, artists, and playlists play as a context |
+
+Removed in v1.5.0: `Search_Suggestions`. Remove that binding from any existing UCI.
 
 ---
 
@@ -180,9 +193,11 @@ The plugin renders album art directly in the plugin block using a **Media** styl
 2. Set its source to the `Album_Art_URL` control
 3. The plugin outputs HTTPS image URLs that Q-SYS can render natively
 
-### Playlist Cover Art
+### Search List
 
-Each `Playlist_Art 1-10` control contains the cover image URL for the corresponding playlist. Wire these to individual Media Display elements to show playlist thumbnails alongside the playlist names.
+Lay out N rows, each with a Media Display bound to `Search_Result_Art n`, text fields for `Search_Result_Name n` and `Search_Result_Artist n`, and a button bound to `Search_Result_Play n`. Make the button transparent and stretch it over the whole row so the row itself is the tap target. Add a vertical fader bound to `Search_Scroll` beside the rows, or up/down buttons bound to `Search_Up` and `Search_Down`.
+
+Art is loaded by the touch panel straight from Spotify's image CDN, so panels on a network with no internet access will show blank art even though the text fills in.
 
 ---
 
@@ -198,7 +213,7 @@ The plugin features a Spotify-themed dark interface with the following sections:
 | **Active Device** | Currently active Spotify Connect device name |
 | **Playlists** | ComboBox dropdown for playlist selection with auto-play on selection |
 | **Devices** | ComboBox dropdown for device selection with auto-refresh and unique device IDs |
-| **Search Tab** | Song search interface with autocomplete dropdown suggestions, pagination (Next/Prev), and 5 playable result rows with album art |
+| **Search Tab** | Search box with Clear and Go, result count, page buttons, N result rows (art, title, subtitle, type badge, Play), and a vertical scroll fader with up/down buttons |
 
 ---
 
@@ -206,8 +221,11 @@ The plugin features a Spotify-themed dark interface with the following sections:
 
 | Issue | Solution |
 |-------|----------|
-| **"redirect_uri: Not matching"** | Ensure the redirect URI in Spotify Dashboard matches: `http://<core-ip>:9091/callback` |
-| **Auth works on PC but not phone** | Add `http://<core-ip>:9091/callback` to the Spotify Dashboard redirect URIs. Use the landing page's code-paste form as fallback. |
+| **"redirect_uri: Not matching"** | The dashboard redirect URI must be exactly `http://127.0.0.1:9091/callback` (or your port), matching the **Redirect Host** and **Redirect Port** properties |
+| **Auth URL shows 127.0.0.1** | Set **Core IP Address** to the Core's LAN address. The plugin ignores loopback there and auto-detects, so this only happens if no non-loopback interface was found |
+| **Phone shows "can't reach this page" after login** | Expected. Copy the URL from that tab and paste it into Step 2 on the landing page |
+| **Search shows "Not signed in"** | Authorize first. Search needs a valid token |
+| **Search rows are blank after changing Search Rows** | The property re-creates the row controls. Re-bind any UCI elements that pointed at removed rows |
 | **"Invalid authorization code"** | Auth codes are single-use. Press Authorize again for a fresh code |
 | **Transport buttons not working** | Ensure you have an active Spotify session on at least one device |
 | **No album art in plugin** | The `Album_Art` control uses Media style — verify the plugin is receiving valid image URLs |
@@ -239,8 +257,9 @@ The plugin features a Spotify-themed dark interface with the following sections:
 |                                                     |
 |  Browser (phone, tablet, or PC)                     |
 |    +-- Opens login page at http://<core-ip>:9091    |
-|    +-- Spotify OAuth -> redirect back to Core       |
-|    +-- Fallback: paste URL into code form           |
+|    +-- Spotify OAuth -> redirect to 127.0.0.1       |
+|    +-- Same machine: caught automatically           |
+|    +-- Phone: paste the redirect URL into Step 2    |
 +-----------------------------------------------------+
          |                          |
          v                          v
@@ -253,12 +272,25 @@ The plugin features a Spotify-themed dark interface with the following sections:
 ## Security Notes
 
 - **No client secret stored** — Uses PKCE (Proof Key for Code Exchange), the recommended flow for public/embedded clients
-- **Tokens are memory-only** — Access and refresh tokens are not persisted to disk; re-auth is needed after a Core reboot
+- **Refresh token is stored on the Core** — Saved in a hidden control and in `/tmp` on the Core so the plugin reconnects after a reboot. It is stored in plain text; anyone with Designer access to the file or Core can read it. Logout wipes it
 - **Scopes are minimal** — Only requests permissions needed for playback control and playlist reading
 
 ---
 
 ## Changelog
+
+### v1.5.0
+- **Scrolling search list:** One query returns tracks, albums, artists, and playlists in a single list, cached on the Core. Scroll with the `Search_Scroll` fader, `Search_Up`/`Search_Down`, or page with `Search_Prev`/`Search_Next`, all without re-querying
+- **Search-as-you-type:** Results refresh half a second after typing stops. `Search_Execute` still forces an immediate search; `Search_Clear` empties everything
+- **Richer rows:** New `Search_Result_Type` and populated `Search_Result_Album` per row; artists show follower counts, playlists show owner and track count
+- **Search Rows property:** Choose 5 to 15 visible rows
+- **Play anything:** Playing an album, artist, or playlist row starts it as a context; tracks play as a single track
+- **Removed:** `Search_Suggestions` listbox (superseded by the live list)
+
+### v1.4.6
+- **Auth URL shows the Core's LAN address:** Spotify requires the loopback redirect, but the client needs the real address to reach the login page from a phone. New **Redirect Host** property (default `127.0.0.1`) feeds Spotify; **Core IP Address** or auto-detect feeds the Auth URL
+- **Persistent login:** Refresh token is saved on the Core and used to reconnect automatically after a reboot or redeploy
+- Landing page copy reworded so the failed redirect on a phone reads as the expected step
 
 ### v1.4.5
 - **Tabbed Interface:** Reorganized the UI into "Now Playing" and "Search" tabs

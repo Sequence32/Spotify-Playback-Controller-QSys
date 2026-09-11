@@ -1,11 +1,11 @@
 -- Plugin Info
 PluginInfo = {
   Name = "Spotify Playback Controller with Art",
-  Version = "1.4.6.001",
+  Version = "1.5.0.001",
   BuildVersion = "1.0.0.0",
   Id = "dstn.qsys.spotify-playback-controller",
   Author = "Dustin Bennett",
-  Description = "Full Spotify playback control with OAuth PKCE auth, now-playing metadata, album art, and transport controls."
+  Description = "Full Spotify playback control with OAuth PKCE auth, now-playing metadata, album art, transport controls, and a scrolling search list with art."
 }
 
 function GetColor() return { 30, 215, 96 } end
@@ -17,11 +17,13 @@ function GetProperties()
     { Name = "Core IP Address", Type = "string", Value = "" },
     { Name = "Redirect Host", Type = "string", Value = "127.0.0.1" },
     { Name = "Redirect Port", Type = "integer", Value = 9091, Min = 1024, Max = 65535 },
-    { Name = "Poll Interval (s)", Type = "enum", Choices = {"1", "2", "3", "5", "10"}, Value = "3" }
+    { Name = "Poll Interval (s)", Type = "enum", Choices = {"1", "2", "3", "5", "10"}, Value = "3" },
+    { Name = "Search Rows", Type = "enum", Choices = {"5", "6", "8", "10", "12", "15"}, Value = "8" }
   }
 end
 
-function GetControls()
+function GetControls(props)
+  local search_rows = tonumber(props["Search Rows"].Value) or 8
   return {
     -- Authentication Group
     { Name = "Auth_URL", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
@@ -66,17 +68,22 @@ function GetControls()
     -- Device Dropdown
     { Name = "Device_Select", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true, Choices = {} },
 
-    -- Search
+    -- Search (results are cached on the Core; rows are a scrolling window into that cache)
     { Name = "Search_Query", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true },
     { Name = "Search_Execute", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
-    { Name = "Search_Result_Art", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
-    { Name = "Search_Result_Name", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
-    { Name = "Search_Result_Artist", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
-    { Name = "Search_Result_Album", ControlType = "Text", Count = 5, PinStyle = "Output", UserPin = true },
-    { Name = "Search_Result_Play", ControlType = "Button", ButtonType = "Trigger", Count = 5, PinStyle = "Input", UserPin = true },
+    { Name = "Search_Clear", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Search_Count", ControlType = "Text", Count = 1, PinStyle = "Output", UserPin = true },
+    { Name = "Search_Scroll", ControlType = "Knob", ControlUnit = "Percent", Min = 0, Max = 100, Count = 1, PinStyle = "Both", UserPin = true },
+    { Name = "Search_Up", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
+    { Name = "Search_Down", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     { Name = "Search_Prev", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
     { Name = "Search_Next", ControlType = "Button", ButtonType = "Trigger", Count = 1, PinStyle = "Input", UserPin = true },
-    { Name = "Search_Suggestions", ControlType = "Text", Count = 1, PinStyle = "Both", UserPin = true, Choices = {} },
+    { Name = "Search_Result_Art", ControlType = "Text", Count = search_rows, PinStyle = "Output", UserPin = true },
+    { Name = "Search_Result_Name", ControlType = "Text", Count = search_rows, PinStyle = "Output", UserPin = true },
+    { Name = "Search_Result_Artist", ControlType = "Text", Count = search_rows, PinStyle = "Output", UserPin = true },
+    { Name = "Search_Result_Album", ControlType = "Text", Count = search_rows, PinStyle = "Output", UserPin = true },
+    { Name = "Search_Result_Type", ControlType = "Text", Count = search_rows, PinStyle = "Output", UserPin = true },
+    { Name = "Search_Result_Play", ControlType = "Button", ButtonType = "Trigger", Count = search_rows, PinStyle = "Input", UserPin = true },
     
     -- Persistent Auth (hidden)
     { Name = "Saved_Refresh_Token", ControlType = "Text", Count = 1, PinStyle = "None", UserPin = false }
@@ -176,31 +183,44 @@ function GetControlLayout(props)
   
   elseif current_page == 2 then
     -- ==== PAGE 2: SEARCH ====
+    local rows   = tonumber(props["Search Rows"].Value) or 8
     local srch_y = 130
-    local row_h  = 60
-    table.insert(graphics, { Type = "GroupBox", Text = "Search", Position = {0, srch_y - 5}, Size = {400, 5 + 140 + (5 * row_h) + 15}, Color = {30, 30, 30} })
-  
-    -- Search bar + button
-    layout["Search_Query"]   = { Style = "Text",   Position = {10, srch_y + 8},  Size = {185, 24} }
-    layout["Search_Execute"] = { Style = "Button", Legend = "Search", Position = {200, srch_y + 8}, Size = {60, 24},
+    local row_h  = 50
+    local rows_y = srch_y + 64
+    local rows_h = rows * row_h
+    table.insert(graphics, { Type = "GroupBox", Text = "Search", Position = {0, srch_y - 5}, Size = {400, 69 + rows_h + 10}, Color = {30, 30, 30} })
+
+    -- Search bar: type to search; Go forces an immediate search; Clear empties everything
+    layout["Search_Query"]   = { Style = "Text",   Position = {10, srch_y + 8},  Size = {245, 24} }
+    layout["Search_Clear"]   = { Style = "Button", Legend = "Clear", Position = {260, srch_y + 8}, Size = {50, 24},
+      Color = {70, 70, 70}, OffColor = {40, 40, 40}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    layout["Search_Execute"] = { Style = "Button", Legend = "Go", Position = {315, srch_y + 8}, Size = {75, 24},
       Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-    layout["Search_Prev"] = { Style = "Button", Legend = "<", Position = {265, srch_y + 8}, Size = {60, 24},
+
+    -- Result count + page buttons
+    layout["Search_Count"] = { Style = "Text", Position = {10, srch_y + 36}, Size = {245, 22}, HTextAlign = "Left" }
+    layout["Search_Prev"]  = { Style = "Button", Legend = "< Page", Position = {260, srch_y + 36}, Size = {62, 22},
       Color = {40, 40, 40}, OffColor = {20, 20, 20}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
-    layout["Search_Next"] = { Style = "Button", Legend = ">", Position = {330, srch_y + 8}, Size = {60, 24},
+    layout["Search_Next"]  = { Style = "Button", Legend = "Page >", Position = {328, srch_y + 36}, Size = {62, 22},
       Color = {40, 40, 40}, OffColor = {20, 20, 20}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
 
-    -- Suggestions Dropdown ListBox
-    layout["Search_Suggestions"] = { Style = "ListBox", Position = {10, srch_y + 35}, Size = {185, 100} }
-  
-    -- Result rows (5 slots)
-    for i = 1, 5 do
-      local ry = srch_y + 140 + ((i - 1) * row_h)
-      layout["Search_Result_Art "    .. i] = { Style = "Media",  Position = {10,  ry},      Size = {50, 50} }
-      layout["Search_Result_Name "   .. i] = { Style = "Text",   Position = {68,  ry},      Size = {260, 24} }
-      layout["Search_Result_Artist " .. i] = { Style = "Text",   Position = {68,  ry + 26}, Size = {180, 20} }
-      layout["Search_Result_Play "   .. i] = { Style = "Button", Legend = "Play", Position = {330, ry + 13}, Size = {60, 24},
+    -- Result rows: art | title / subtitle | type badge + play
+    for i = 1, rows do
+      local ry = rows_y + ((i - 1) * row_h)
+      layout["Search_Result_Art "    .. i] = { Style = "Media",  Position = {10,  ry + 3},  Size = {44, 44} }
+      layout["Search_Result_Name "   .. i] = { Style = "Text",   Position = {60,  ry + 2},  Size = {245, 22}, HTextAlign = "Left" }
+      layout["Search_Result_Artist " .. i] = { Style = "Text",   Position = {60,  ry + 26}, Size = {245, 20}, HTextAlign = "Left", FontSize = 10, Color = {179, 179, 179} }
+      layout["Search_Result_Type "   .. i] = { Style = "Text",   Position = {310, ry + 3},  Size = {50, 18}, FontSize = 9, Color = {179, 179, 179} }
+      layout["Search_Result_Play "   .. i] = { Style = "Button", Legend = "Play", Position = {310, ry + 24}, Size = {50, 22},
         Color = {30, 215, 96}, OffColor = {50, 50, 50}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
     end
+
+    -- Scrollbar column on the right: Up, vertical fader, Down
+    layout["Search_Up"]     = { Style = "Button", Legend = "^", Position = {366, rows_y}, Size = {24, 20},
+      Color = {40, 40, 40}, OffColor = {20, 20, 20}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
+    layout["Search_Scroll"] = { Style = "Fader",  Position = {370, rows_y + 24}, Size = {16, rows_h - 48} }
+    layout["Search_Down"]   = { Style = "Button", Legend = "v", Position = {366, rows_y + rows_h - 20}, Size = {24, 20},
+      Color = {40, 40, 40}, OffColor = {20, 20, 20}, UnlinkOffColor = true, FontColor = {255, 255, 255} }
   end
 
   return layout, graphics
@@ -958,154 +978,225 @@ if Controls then
   end
 
   -- ==========================================
-  -- Search Logic
+  -- Search: data layer
+  -- One request fetches tracks, albums, artists and playlists together. The
+  -- results are flattened into search_results (an ordered list of entries) and
+  -- kept on the Core, so scrolling never touches the network.
+  -- Entry shape: { kind, title, subtitle, extra, art, uri }
   -- ==========================================
-  local search_uris = {}
+  local SEARCH_ROWS = tonumber(Properties["Search Rows"].Value) or 8
+  local SEARCH_LIMIT_PER_TYPE = 10
+  local search_results = {}
   local search_offset = 0
+  local search_seq = 0            -- increments per request so late replies are discarded
+  local is_updating_scroll = false
 
-  local function clear_search_results()
-    for i = 1, 5 do
-      Controls.Search_Result_Art[i].String    = ""
-      Controls.Search_Result_Name[i].String   = ""
-      Controls.Search_Result_Artist[i].String = ""
-      Controls.Search_Result_Album[i].String  = ""
-      search_uris[i] = nil
+  local function names_of(list)
+    local t = {}
+    if type(list) == "table" then
+      for _, a in ipairs(list) do table.insert(t, a.name or "") end
     end
+    return table.concat(t, ", ")
+  end
+
+  -- Spotify lists images largest first. Pick the smallest one that is still
+  -- big enough for a UCI tile; fall back to whatever exists.
+  local function pick_image(images)
+    if type(images) ~= "table" or #images == 0 then return "" end
+    for i = #images, 1, -1 do
+      local img = images[i]
+      if type(img) == "table" and (tonumber(img.width) or 0) >= 200 then return img.url or "" end
+    end
+    return images[1].url or ""
+  end
+
+  local function with_commas(n)
+    local s = tostring(math.floor(n))
+    local k
+    repeat s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2") until k == 0
+    return s
+  end
+
+  local function build_entries(result)
+    local entries = {}
+    local function add(kind, section, fn)
+      if type(section) ~= "table" or type(section.items) ~= "table" then return end
+      for _, it in ipairs(section.items) do
+        if type(it) == "table" then -- Spotify can return null items in these lists
+          local e = fn(it)
+          if e then e.kind = kind; table.insert(entries, e) end
+        end
+      end
+    end
+    add("Track", result.tracks, function(t)
+      local album = type(t.album) == "table" and t.album or {}
+      return { title = t.name or "", subtitle = names_of(t.artists), extra = album.name or "",
+               art = pick_image(album.images), uri = t.uri or "" }
+    end)
+    add("Album", result.albums, function(a)
+      return { title = a.name or "", subtitle = names_of(a.artists), extra = tostring(a.release_date or ""):sub(1, 4),
+               art = pick_image(a.images), uri = a.uri or "" }
+    end)
+    add("Artist", result.artists, function(a)
+      local followers = type(a.followers) == "table" and tonumber(a.followers.total) or nil
+      return { title = a.name or "", subtitle = followers and (with_commas(followers) .. " followers") or "Artist",
+               extra = "", art = pick_image(a.images), uri = a.uri or "" }
+    end)
+    add("Playlist", result.playlists, function(p)
+      local owner = type(p.owner) == "table" and (p.owner.display_name or p.owner.id) or ""
+      local total = type(p.tracks) == "table" and p.tracks.total or nil
+      return { title = p.name or "", subtitle = owner ~= "" and ("by " .. owner) or "Playlist",
+               extra = total and (tostring(total) .. " tracks") or "", art = pick_image(p.images), uri = p.uri or "" }
+    end)
+    return entries
+  end
+
+  local function play_entry(e)
+    if not e or e.uri == "" then return end
+    local body
+    if e.kind == "Track" then
+      body = rapidjson.encode({ uris = { e.uri } })
+    else
+      body = rapidjson.encode({ context_uri = e.uri }) -- album, artist, playlist
+    end
+    local endpoint = "/me/player/play"
+    if last_device_id then endpoint = endpoint .. "?device_id=" .. last_device_id end
+    spotify_api("PUT", endpoint, body, function(code)
+      if code == 204 or code == 200 then
+        Timer.CallAfter(poll_now_playing, 1)
+        print("[Spotify] Playing " .. e.kind:lower() .. ": " .. e.title)
+      else
+        print("[Spotify] Play " .. e.kind:lower() .. " failed. Code: " .. tostring(code))
+      end
+    end)
+  end
+
+  -- ==========================================
+  -- Search: presentation
+  -- SEARCH_ROWS controls are a window into search_results starting at
+  -- search_offset. Every scroll input funnels through scroll_to().
+  -- ==========================================
+  local function media_json(url)
+    if not url or url == "" then return "" end
+    return '{"Protocol":"Image","URLs":["' .. url .. '"]}'
+  end
+
+  local function max_offset()
+    return math.max(0, #search_results - SEARCH_ROWS)
+  end
+
+  local function render_search_rows()
+    for i = 1, SEARCH_ROWS do
+      local e = search_results[search_offset + i]
+      Controls.Search_Result_Art[i].String    = e and media_json(e.art) or ""
+      Controls.Search_Result_Name[i].String   = e and e.title or ""
+      Controls.Search_Result_Artist[i].String = e and e.subtitle or ""
+      Controls.Search_Result_Album[i].String  = e and e.extra or ""
+      Controls.Search_Result_Type[i].String   = e and e.kind or ""
+    end
+    local total = #search_results
+    if total == 0 then
+      Controls.Search_Count.String = (Controls.Search_Query.String == "") and "" or "No results"
+    else
+      Controls.Search_Count.String = string.format("%d-%d of %d",
+        search_offset + 1, math.min(search_offset + SEARCH_ROWS, total), total)
+    end
+    is_updating_scroll = true
+    local m = max_offset()
+    Controls.Search_Scroll.Position = (m > 0) and (search_offset / m) or 0
+    is_updating_scroll = false
+  end
+
+  local function scroll_to(offset)
+    search_offset = math.max(0, math.min(offset, max_offset()))
+    render_search_rows()
+  end
+
+  local function clear_search()
+    search_seq = search_seq + 1 -- drop any in-flight reply
+    search_results = {}
+    scroll_to(0)
   end
 
   local function do_search()
-    local query = Controls.Search_Query.String
-    if not query or query == "" then return end
-    local encoded = query:gsub(" ", "%%20"):gsub("&", "%%26"):gsub("=", "%%3D")
-    clear_search_results()
-    spotify_api("GET", "/search?q=" .. encoded .. "&type=track&limit=5&offset=" .. search_offset, nil, function(code, data)
+    local query = (Controls.Search_Query.String or ""):match("^%s*(.-)%s*$")
+    if query == "" then clear_search() return end
+    if not access_token then
+      Controls.Search_Count.String = "Not signed in"
+      return
+    end
+    search_seq = search_seq + 1
+    local seq = search_seq
+    local endpoint = "/search?q=" .. url_encode(query)
+      .. "&type=track,album,artist,playlist&limit=" .. SEARCH_LIMIT_PER_TYPE
+    spotify_api("GET", endpoint, nil, function(code, data)
+      if seq ~= search_seq then return end -- a newer search superseded this one
       if code == 200 and data then
         local result = rapidjson.decode(data)
-        if result and type(result.tracks) == "table" and type(result.tracks.items) == "table" then
-          for i, track in ipairs(result.tracks.items) do
-            if i > 5 then break end
-            Controls.Search_Result_Name[i].String = track.name or ""
-            search_uris[i] = track.uri or ""
-            local artists = {}
-            if type(track.artists) == "table" then
-              for _, a in ipairs(track.artists) do table.insert(artists, a.name or "") end
-            end
-            Controls.Search_Result_Artist[i].String = table.concat(artists, ", ")
-            if type(track.album) == "table" then
-              Controls.Search_Result_Album[i].String = track.album.name or ""
-              if type(track.album.images) == "table" and track.album.images[1] then
-                local art_url = track.album.images[1].url or ""
-                Controls.Search_Result_Art[i].String = art_url ~= "" and
-                  ('{"Protocol":"Image","URLs":["' .. art_url .. '"]}') or ""
-              end
-            end
-          end
-          print("[Spotify] Search: Showing results " .. (search_offset + 1) .. "-" .. (search_offset + #result.tracks.items) .. " for '" .. query .. "'")
-        end
+        search_results = (type(result) == "table") and build_entries(result) or {}
+        scroll_to(0)
+        print("[Spotify] Search '" .. query .. "': " .. #search_results .. " results")
       else
+        Controls.Search_Count.String = "Search failed"
         print("[Spotify] Search failed. Code: " .. tostring(code))
       end
     end)
   end
 
-  Controls.Search_Execute.EventHandler = function()
-    search_offset = 0
-    Controls.Search_Suggestions.Choices = {}
+  -- Search-as-you-type: wait for a pause in typing before hitting the API.
+  local search_debounce = Timer.New()
+  search_debounce.EventHandler = function()
+    search_debounce:Stop()
     do_search()
   end
-  
+  local function schedule_search()
+    search_debounce:Stop()
+    search_debounce:Start(0.5)
+  end
+
   local last_query = ""
-  local is_updating_query = false
-
-  local function fetch_suggestions(query)
-    if not query or query == "" then
-      Controls.Search_Suggestions.Choices = {}
-      return
+  local function on_query_changed()
+    local q = Controls.Search_Query.String or ""
+    if q ~= last_query then
+      last_query = q
+      schedule_search()
     end
-    local encoded = query:gsub(" ", "%%20"):gsub("&", "%%26"):gsub("=", "%%3D")
-    spotify_api("GET", "/search?q=" .. encoded .. "&type=artist,track&limit=5", nil, function(code, data)
-      if code == 200 and data then
-        local result = rapidjson.decode(data)
-        local suggestions = {}
-        if result.artists and result.artists.items then
-          for i, artist in ipairs(result.artists.items) do
-            if i > 2 then break end
-            table.insert(suggestions, "Artist: " .. (artist.name or ""))
-          end
-        end
-        if result.tracks and result.tracks.items then
-          for i, track in ipairs(result.tracks.items) do
-            if i > 3 then break end
-            table.insert(suggestions, "Track: " .. (track.name or "") .. " - " .. (track.artists[1] and track.artists[1].name or ""))
-          end
-        end
-        Controls.Search_Suggestions.Choices = suggestions
-      end
-    end)
   end
-
+  Controls.Search_Query.EventHandler = on_query_changed
+  -- Some UIs only commit the text control on Enter; poll so live typing still searches.
   local query_poll_timer = Timer.New()
-  query_poll_timer.EventHandler = function()
-    if is_updating_query then return end
-    local current_query = Controls.Search_Query.String
-    if current_query ~= last_query then
-      last_query = current_query
-      fetch_suggestions(current_query)
-    end
-  end
+  query_poll_timer.EventHandler = on_query_changed
   query_poll_timer:Start(0.3)
 
-  Controls.Search_Query.EventHandler = function()
-    if is_updating_query then return end
-    local current_query = Controls.Search_Query.String
-    if current_query ~= last_query then
-      last_query = current_query
-      fetch_suggestions(current_query)
-    end
-  end
-
-  Controls.Search_Suggestions.EventHandler = function()
-    local sel = Controls.Search_Suggestions.String
-    if sel and sel ~= "" then
-      local clean_query = sel:gsub("^Artist: ", ""):gsub("^Track: ", "")
-      is_updating_query = true
-      Controls.Search_Query.String = clean_query
-      last_query = clean_query
-      Controls.Search_Suggestions.Choices = {}
-      is_updating_query = false
-      search_offset = 0
-      do_search()
-    end
-  end
-  
-  Controls.Search_Next.EventHandler = function()
-    search_offset = search_offset + 5
+  Controls.Search_Execute.EventHandler = function()
+    search_debounce:Stop()
     do_search()
   end
 
-  Controls.Search_Prev.EventHandler = function()
-    search_offset = math.max(0, search_offset - 5)
-    do_search()
+  Controls.Search_Clear.EventHandler = function()
+    search_debounce:Stop()
+    Controls.Search_Query.String = ""
+    last_query = ""
+    clear_search()
   end
 
-  for i = 1, 5 do
+  Controls.Search_Up.EventHandler   = function() scroll_to(search_offset - 1) end
+  Controls.Search_Down.EventHandler = function() scroll_to(search_offset + 1) end
+  Controls.Search_Prev.EventHandler = function() scroll_to(search_offset - SEARCH_ROWS) end
+  Controls.Search_Next.EventHandler = function() scroll_to(search_offset + SEARCH_ROWS) end
+
+  Controls.Search_Scroll.EventHandler = function(ctrl)
+    if is_updating_scroll then return end
+    scroll_to(math.floor(ctrl.Position * max_offset() + 0.5))
+  end
+
+  for i = 1, SEARCH_ROWS do
     Controls.Search_Result_Play[i].EventHandler = function()
-      local uri = search_uris[i]
-      if uri and uri ~= "" then
-        local body = rapidjson.encode({ uris = { uri } })
-        local endpoint = "/me/player/play"
-        if last_device_id then endpoint = endpoint .. "?device_id=" .. last_device_id end
-        spotify_api("PUT", endpoint, body, function(code)
-          if code == 204 or code == 200 then
-            Timer.CallAfter(poll_now_playing, 1)
-            print("[Spotify] Playing: " .. Controls.Search_Result_Name[i].String)
-          else
-            print("[Spotify] Play track failed. Code: " .. tostring(code))
-          end
-        end)
-      end
+      play_entry(search_results[search_offset + i])
     end
   end
+
+  render_search_rows() -- start with a clean, empty list
 
   -- Initialize: attempt auto-reconnect from saved refresh token
   local saved_token = load_refresh_token()
