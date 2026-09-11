@@ -15,6 +15,7 @@ function GetProperties()
   return {
     { Name = "Client ID", Type = "string", Value = "" },
     { Name = "Core IP Address", Type = "string", Value = "" },
+    { Name = "Redirect Host", Type = "string", Value = "127.0.0.1" },
     { Name = "Redirect Port", Type = "integer", Value = 9091, Min = 1024, Max = 65535 },
     { Name = "Poll Interval (s)", Type = "enum", Choices = {"1", "2", "3", "5", "10"}, Value = "3" }
   }
@@ -212,8 +213,46 @@ if Controls then
   local REDIRECT_PORT = Properties["Redirect Port"].Value
   local POLL_INTERVAL = tonumber(Properties["Poll Interval (s)"].Value) or 3
   
-  local REDIRECT_URI = "http://localhost:" .. tostring(REDIRECT_PORT) .. "/callback"
-  
+  -- ==========================================
+  -- Host Resolution
+  -- Two different addresses are in play:
+  --   REDIRECT_HOST  goes to Spotify in the redirect_uri. Spotify only accepts
+  --                  plain-HTTP redirects on the loopback address, so this is
+  --                  normally 127.0.0.1 and must match the Developer Dashboard.
+  --   landing_host() is the address a person types into their phone to reach
+  --                  the login page served by this plugin. It must be the Core's
+  --                  real LAN address, never loopback.
+  -- ==========================================
+  local REDIRECT_HOST = Properties["Redirect Host"].Value
+  if REDIRECT_HOST == nil or REDIRECT_HOST == "" then REDIRECT_HOST = "127.0.0.1" end
+  local REDIRECT_URI = "http://" .. REDIRECT_HOST .. ":" .. tostring(REDIRECT_PORT) .. "/callback"
+
+  local function is_loopback(ip)
+    return ip == nil or ip == "" or ip == "localhost" or ip == "::1" or ip:match("^127%.") ~= nil
+  end
+
+  local function detect_lan_ip()
+    local ok, ifaces = pcall(Network.Interfaces)
+    if not ok or type(ifaces) ~= "table" then return nil end
+    local fallback = nil
+    for _, nic in ipairs(ifaces) do
+      local addr = nic.Address or ""
+      if addr ~= "" and not is_loopback(addr) and not addr:match("^169%.254%.") then
+        if nic.Interface == "LAN A" then return addr end
+        fallback = fallback or addr
+      end
+    end
+    return fallback
+  end
+
+  -- Address shown in Auth_URL and printed to the log. Property wins if it is a
+  -- usable LAN address; otherwise auto-detect from the Core's interfaces.
+  local function landing_host()
+    local prop_ip = Properties["Core IP Address"].Value or ""
+    if prop_ip ~= "" and not is_loopback(prop_ip) then return prop_ip end
+    return detect_lan_ip() or (prop_ip ~= "" and prop_ip) or REDIRECT_HOST
+  end
+
   local code_verifier = ""
   local code_challenge = ""
   local access_token = nil
@@ -569,21 +608,10 @@ if Controls then
     auth_code_used = false -- Reset flag for new auth attempt
     update_auth_status(3) -- Yellow/Waiting
     
-    -- Determine the IP for the redirect URI
-    -- Use the property if set, otherwise try to auto-detect
-    local ip = Properties["Core IP Address"].Value
-    if ip == "" then
-      local interfaces = Network.Interfaces()
-      if interfaces and interfaces[1] then
-        ip = interfaces[1].Address
-      else
-        print("[Spotify] Error: Could not detect network interface. Set 'Core IP Address' in properties.")
-        update_auth_status(2)
-        return
-      end
-    end
-    REDIRECT_URI = "http://" .. ip .. ":" .. tostring(REDIRECT_PORT) .. "/callback"
-    
+    -- The address the client visits on their phone. Distinct from REDIRECT_URI.
+    local ip = landing_host()
+    local login_page_url = "http://" .. ip .. ":" .. tostring(REDIRECT_PORT)
+
     code_verifier = generate_code_verifier()
     code_challenge = generate_code_challenge(code_verifier)
     
@@ -598,8 +626,8 @@ if Controls then
     -- Store the auth URL for the landing page
     local current_auth_url = auth_url
     
-    -- Show the simple login page URL (user just browses to this address)
-    Controls.Auth_URL.String = "http://" .. ip .. ":" .. tostring(REDIRECT_PORT)
+    -- Show the login page URL (this is what the client types into their phone)
+    Controls.Auth_URL.String = login_page_url
     -- Start TCP Server — serves login page AND catches OAuth redirect
     if auth_server then auth_server:Close() end
     auth_server = TcpSocketServer.New()
@@ -684,9 +712,9 @@ if Controls then
             .. "<a class='btn' href='" .. current_auth_url .. "' target='_blank'>Step 1: Log in with Spotify</a>"
             .. "<div class='sep'>"
             .. "<p style='color:#fff;font-weight:bold;font-size:15px'>Step 2: Paste the URL or code</p>"
-            .. "<div class='step'>After logging in, you may see an error page.</div>"
-            .. "<div class='step'>Just <b>copy the entire URL</b> from the address bar</div>"
-            .. "<div class='step'>Paste it below and hit Submit</div>"
+            .. "<div class='step'>After you approve, Spotify sends you to a page that <b>won't load</b>. That's expected.</div>"
+            .. "<div class='step'><b>Copy the entire URL</b> from that tab's address bar</div>"
+            .. "<div class='step'>Come back here, paste it below, and hit Submit</div>"
             .. "<form action='/submit_code' method='GET'>"
             .. "<input class='cin' type='text' name='code' placeholder='Paste the full URL or auth code here...'>"
             .. "<br><button type='submit' class='sub'>Submit Code</button>"
@@ -701,7 +729,7 @@ if Controls then
       end
     end
     auth_server:Listen(REDIRECT_PORT)
-    print("[Spotify] Login page ready at http://" .. ip .. ":" .. tostring(REDIRECT_PORT))
+    print("[Spotify] Login page ready at " .. login_page_url .. "  (redirect_uri = " .. REDIRECT_URI .. ")")
   end
 
   Controls.Auth_Code_Input.EventHandler = function(ctrl)
@@ -1085,17 +1113,7 @@ if Controls then
     print("[Spotify] Found saved refresh token. Attempting auto-reconnect...")
     update_auth_status(3) -- Yellow while attempting
     refresh_token = saved_token
-    
-    -- Determine IP for REDIRECT_URI
-    local ip = Properties["Core IP Address"].Value
-    if ip == "" then
-      local interfaces = Network.Interfaces()
-      if interfaces and interfaces[1] then ip = interfaces[1].Address end
-    end
-    if ip then
-      REDIRECT_URI = "http://" .. ip .. ":" .. tostring(REDIRECT_PORT) .. "/callback"
-    end
-    
+
     refresh_access_token(function()
       start_polling()
       fetch_user_profile()
